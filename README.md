@@ -6,10 +6,10 @@ Türkçe arayüzlü, yerel çalışan BTC/USDT araştırma ve backtest platformu
 
 ## GitHub deposu ve başlangıç verileri
 
-Depo: [Asasi1453/Bitcoin-Backtest-Lab](https://github.com/Asasi1453/Bitcoin-Backtest-Lab).
+Depo: [bilgehanerdmr/Bitcoin-Backtest-Lab](https://github.com/bilgehanerdmr/Bitcoin-Backtest-Lab).
 
 ```sh
-git clone https://github.com/Asasi1453/Bitcoin-Backtest-Lab.git
+git clone https://github.com/bilgehanerdmr/Bitcoin-Backtest-Lab.git
 cd Bitcoin-Backtest-Lab
 npm ci
 npm run dev
