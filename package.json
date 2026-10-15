@@ -16,7 +16,7 @@
   },
   "keywords": [],
   "author": "Bilgehan Erdemir",
-  "license": "ISC",
+  "license": "UNLICENSED",
   "type": "module",
   "dependencies": {
     "express": "^5.2.1",

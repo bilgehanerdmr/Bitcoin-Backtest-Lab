@@ -2,6 +2,8 @@
 
 A local BTC/USDT research workbench with a separate TypeScript backtest engine, historical-data validation, and Python strategy callbacks.
 
+**Portfolio showcase — all rights reserved.** Source is visible for inspection. Running, reusing, modifying, distributing, or selling the project requires prior written permission, subject to the exceptions in [LICENSE](LICENSE). The setup instructions below are for the owner and authorized users.
+
 The project demonstrates research infrastructure: explicit execution assumptions, inspectable trade accounting, and persistence. Strategy results are simulations and depend on the stated model.
 
 ## Quick start
@@ -48,4 +50,6 @@ A useful next experiment is a frozen chronological comparison of simple baseline
 
 ## License
 
-ISC — see [LICENSE](LICENSE).
+Copyright (c) 2026 Bilgehan Erdemir. **All rights reserved.** This project is not offered under an open-source license. Commercial and noncommercial use require prior written permission, except where applicable law, GitHub's Terms of Service, or a separate applicable license permits otherwise. For permission requests, contact the author through [GitHub](https://github.com/bilgehanerdmr) or open an issue.
+
+Third-party components retain their own licenses. Versions previously released under ISC retain their ISC permissions; this change does not revoke those permissions. See [LICENSE](LICENSE) for the full notice.
