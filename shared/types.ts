@@ -7,6 +7,8 @@ export const intervals = {
   '1d': 86400,
 } as const;
 export type Interval = keyof typeof intervals;
+// First BTCUSDT kline on Binance Spot; earlier live ranges have no data at all.
+export const LIVE_DATA_START = '2017-08-17';
 export type Mode = 'live' | 'demo';
 export type Strategy = 'sma' | 'rsi' | 'breakout' | 'custom' | 'python';
 export interface Candle {
@@ -62,6 +64,9 @@ export interface Result {
   config: Config;
   source: string;
   candleCount: number;
+  // Open times inside start..end that Binance never produced (exchange outages).
+  // Absent in reports saved before gaps were supported, which were always continuous.
+  missingCandles?: number;
   start: number;
   end: number;
   trades: Trade[];

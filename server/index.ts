@@ -2,11 +2,12 @@ import express from 'express';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { binance, db, getCandles } from './market';
-import { backtest, validateConfig } from '../shared/engine';
+import { backtest, validateConfig, validateLiveRange } from '../shared/engine';
 import { demoCandles } from '../shared/demo';
 import { intervals, type Config, type Interval, type Result } from '../shared/types';
 import { runPython } from './python';
 import { localAccess } from './local-access';
+import { errorHandler } from './errors';
 import {
   deleteReports,
   exportBackup,
@@ -75,7 +76,7 @@ app.get('/api/workspace', (_req, res) => res.json(readWorkspace()));
 app.get('/api/backup', (_req, res) => res.json(exportBackup()));
 app.post('/api/backtests/delete', (req, res, next) => {
   try {
-    const ids = deleteReports(req.body.ids);
+    const ids = deleteReports(req.body?.ids);
     res.json({ ids, deleted: ids.length });
   } catch (e) {
     next(e);
@@ -131,6 +132,7 @@ app.post('/api/backtests', async (req, res, next) => {
   try {
     const config = req.body as Config;
     validateConfig(config);
+    validateLiveRange(config);
     const start = Date.parse(config.start + 'T00:00:00Z') / 1000,
       end = Math.min(
         Date.parse(config.end + 'T23:59:59Z') / 1000,
@@ -161,9 +163,6 @@ if (existsSync('dist/index.html')) {
   app.use(express.static('dist'));
   app.get('/{*path}', (_req, res) => res.sendFile(path.resolve('dist/index.html')));
 }
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error(err.message);
-  res.status(400).json({ error: err.message || 'İşlem tamamlanamadı.' });
-});
+app.use(errorHandler);
 const port = Number(process.env.PORT || 3001);
 app.listen(port, '127.0.0.1', () => console.log(`Bitcoin Lab API: http://127.0.0.1:${port}`));

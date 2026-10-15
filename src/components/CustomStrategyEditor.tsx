@@ -37,11 +37,12 @@ export function CustomStrategyEditor({ value, candles, interval, mode, onApply, 
     [error, setError] = useState('');
   const dialog = useRef<HTMLElement>(null);
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
+  useEffect(() => {
+    closeRef.current = onClose;
+  });
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
-    const first = dialog.current?.querySelector<HTMLElement>('input');
-    first?.focus();
+    dialog.current?.querySelector<HTMLElement>('input')?.focus();
     function keydown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         e.preventDefault();

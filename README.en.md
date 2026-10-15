@@ -18,20 +18,20 @@ Open http://127.0.0.1:5173. Use the explicitly labelled synthetic demo to explor
 
 ## Where to review the engineering
 
-| Component | Location | What to inspect |
-|---|---|---|
-| Backtest engine | `shared/engine.ts` | Next-bar execution, fees, slippage, stops, equity and benchmarks |
-| Calculation tests | `tests/engine.test.ts` | Hand-checkable trade accounting and historical-fill invariance |
-| Rule evaluation | `tests/candle-rules.test.ts` | Custom candle conditions |
-| Python integration | `tests/python.test.ts` | Strategy callbacks and process behavior |
-| Data and persistence | `tests/market.test.ts`, `tests/storage.test.ts` | Historical data and workspace handling |
-| Local API boundary | `tests/local-access.test.ts` | Local request access controls |
+| Component            | Location                                        | What to inspect                                                  |
+| -------------------- | ----------------------------------------------- | ---------------------------------------------------------------- |
+| Backtest engine      | `shared/engine.ts`                              | Next-bar execution, fees, slippage, stops, equity and benchmarks |
+| Calculation tests    | `tests/engine.test.ts`                          | Hand-checkable trade accounting and historical-fill invariance   |
+| Rule evaluation      | `tests/candle-rules.test.ts`                    | Custom candle conditions                                         |
+| Python integration   | `tests/python.test.ts`                          | Strategy callbacks and process behavior                          |
+| Data and persistence | `tests/market.test.ts`, `tests/storage.test.ts` | Historical data and workspace handling                           |
+| Local API boundary   | `tests/local-access.test.ts`                    | Local request access controls                                    |
 
 On 13 September 2026, the existing unit suite passed **78 tests across 6 files** at revision `d457582fd25bc41c2a0216d524df713ef4a2e2b3`. This is a unit-test result; live exchange and browser integration checks were not rerun in that review.
 
 ## Evaluation model
 
-- Only closed, continuous OHLCV candles are accepted. Signals execute at the following candle’s open.
+- Only closed, continuous OHLCV candles are accepted. The one exception is Binance’s own outages: when Binance returns a later candle, the skipped open times are confirmed never to have traded, so they are skipped (not filled in) and counted in the report. Live data starts at the BTCUSDT listing on 17 August 2017. Signals execute at the following candle’s open.
 - The portfolio is spot, long-only, unlevered, and holds at most one position.
 - Entry and exit both incur commission and adverse slippage. Unallocated capital stays in cash.
 - If stop-loss and take-profit are both crossed inside a candle, the stop takes precedence. Stop gaps use the opening price.
@@ -45,3 +45,7 @@ The model does not simulate order-book liquidity, partial fills, market impact, 
 Synthetic demo data are deterministic and labelled separately from market data. Existing workspace backups may include personal reports and custom strategy code; they are not required for a reviewer to inspect the engine or run its unit tests. Python callbacks execute trusted local code and are not a multi-user sandbox.
 
 A useful next experiment is a frozen chronological comparison of simple baselines, with data provenance, parameters, and result artifacts saved together. No predictive advantage is claimed by the existence of this workbench.
+
+## License
+
+ISC — see [LICENSE](LICENSE).

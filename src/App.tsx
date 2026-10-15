@@ -11,7 +11,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Clock3,
   Database,
   Download,
   FlaskConical,
@@ -39,6 +38,7 @@ import {
 import {
   defaultConfig,
   intervals,
+  LIVE_DATA_START,
   strategyNames,
   strategyLabel,
   type Config,
@@ -50,7 +50,7 @@ import {
 import { api, date, download, money, pct } from './api';
 import { useMarket } from './useMarket';
 import { PriceChart, EquityChart } from './components/Chart';
-import { validateConfig } from '../shared/engine';
+import { validateConfig, validateLiveRange } from '../shared/engine';
 import { patternStrategy, ruleText } from '../shared/candle-rules';
 import { CustomStrategyEditor } from './components/CustomStrategyEditor';
 import { PythonStrategyEditor } from './components/PythonStrategyEditor';
@@ -112,6 +112,7 @@ function App() {
     [workspaceReady, setWorkspaceReady] = useState(false),
     [workspaceSaving, setWorkspaceSaving] = useState(false),
     [deleteIds, setDeleteIds] = useState<string[]>([]),
+    [presetDelete, setPresetDelete] = useState<number | null>(null),
     [deleting, setDeleting] = useState(false),
     [deleteError, setDeleteError] = useState(''),
     [hasMoreReports, setHasMoreReports] = useState(false),
@@ -173,6 +174,8 @@ function App() {
     return () => {
       active = false;
     };
+    // Initial load and one-time localStorage migration only.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies
   }, []);
   useEffect(() => {
     if (toast) {
@@ -242,12 +245,26 @@ function App() {
       setDeleting(false);
     }
   }
+  async function removePreset(index: number) {
+    setDeleteError('');
+    try {
+      await saveWorkspace({
+        presets: presets.filter((_, i) => i !== index),
+        defaults: preferences,
+      });
+      setPresetDelete(null);
+      setToast('Şablon silindi. Raporlar ve mum verileri korunuyor.');
+    } catch (e) {
+      setDeleteError((e as Error).message);
+    }
+  }
   async function run() {
     if (running) return;
     setError('');
     const actual = { ...config, mode };
     try {
       validateConfig(actual);
+      validateLiveRange(actual);
     } catch (e) {
       setError((e as Error).message);
       return;
@@ -417,6 +434,7 @@ function App() {
             <input
               type="date"
               value={config.start}
+              min={mode === 'live' ? LIVE_DATA_START : undefined}
               max={config.end}
               onChange={(e) => update('start', e.target.value)}
             />
@@ -560,6 +578,8 @@ function App() {
             {strategyLabel(result.config)} · {result.config.interval} ·{' '}
             {result.candleCount.toLocaleString('tr-TR')} kapanmış mum · {result.config.start} →{' '}
             {result.config.end} (UTC)
+            {!!result.missingCandles &&
+              ` · Binance'te bulunmayan ${result.missingCandles.toLocaleString('tr-TR')} mum (borsa kesintisi) atlandı`}
           </div>
           {result.config.strategy === 'custom' && result.config.custom && (
             <details className="report-rules">
@@ -1136,15 +1156,29 @@ function App() {
                       <p>
                         ${money(p.config.capital)} sermaye · %{p.config.fee} komisyon
                       </p>
-                      <button
-                        className="secondary"
-                        onClick={() => {
-                          setConfig(p.config);
-                          go('backtest');
-                        }}
-                      >
-                        Şablonu yükle <ArrowRight size={15} />
-                      </button>
+                      <div className="report-actions preset-actions">
+                        <button
+                          className="secondary"
+                          onClick={() => {
+                            setConfig(p.config);
+                            go('backtest');
+                          }}
+                        >
+                          Şablonu yükle <ArrowRight size={15} />
+                        </button>
+                        <button
+                          className="icon-button danger"
+                          title="Bu şablonu sil"
+                          aria-label={'Şablonu sil ' + p.name}
+                          disabled={!workspaceReady || workspaceSaving}
+                          onClick={() => {
+                            setDeleteError('');
+                            setPresetDelete(i);
+                          }}
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
                     </section>
                   ))}
                 </div>
@@ -1540,6 +1574,72 @@ function App() {
                 </button>
                 <button className="danger-button" disabled={deleting} onClick={removeReports}>
                   {deleting ? <LoaderCircle size={15} className="spin" /> : <Trash2 size={15} />}
+                  Silme işlemini onayla
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+      {presetDelete !== null && presets[presetDelete] && (
+        <div
+          className="modal-backdrop"
+          onClick={() => {
+            if (!workspaceSaving) setPresetDelete(null);
+          }}
+        >
+          <section
+            className="modal panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Şablonu sil"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="panel-heading">
+              <h2>Şablon silinecek</h2>
+              <button
+                className="icon-button"
+                disabled={workspaceSaving}
+                aria-label="Silmeyi iptal et"
+                onClick={() => setPresetDelete(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <ul className="delete-list">
+                <li>
+                  {presets[presetDelete].name} · {strategyLabel(presets[presetDelete].config)} ·{' '}
+                  {presets[presetDelete].config.interval}
+                </li>
+              </ul>
+              <p className="delete-description">
+                Şablon yerel kütüphaneden kaldırılır. Bu şablonla oluşturulan raporlar, mum verileri
+                ve dışa aktardığınız yedek dosyaları korunur.
+              </p>
+              {deleteError && (
+                <div className="notice error-notice" role="alert">
+                  {deleteError}
+                </div>
+              )}
+              <div className="delete-actions">
+                <button
+                  className="secondary"
+                  disabled={workspaceSaving}
+                  onClick={() => setPresetDelete(null)}
+                >
+                  Vazgeç
+                </button>
+                <button
+                  className="danger-button"
+                  disabled={workspaceSaving}
+                  onClick={() => void removePreset(presetDelete)}
+                >
+                  {workspaceSaving ? (
+                    <LoaderCircle size={15} className="spin" />
+                  ) : (
+                    <Trash2 size={15} />
+                  )}
                   Silme işlemini onayla
                 </button>
               </div>

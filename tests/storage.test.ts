@@ -78,6 +78,24 @@ describe('Portable local storage', () => {
     expect(exported.workspace).toEqual(backup.workspace);
     expect(storage.readWorkspace()).toEqual(backup.workspace);
   });
+  it('accepts reports across exchange outages only when the skipped candles are declared', () => {
+    const backup = fixture();
+    backup.backtests = [
+      backtest(
+        backup.candles.filter((_, i) => i !== 40),
+        backup.backtests[0].config,
+      ),
+    ];
+    expect(backup.backtests[0].missingCandles).toBe(1);
+    expect(() => validateBackup(backup)).not.toThrow();
+    const hidden = structuredClone(backup);
+    delete hidden.backtests[0].missingCandles;
+    expect(() => validateBackup(hidden)).toThrow(/eksik mum/);
+    // Reports saved before outages were supported have no field and no holes.
+    const legacy = fixture();
+    delete legacy.backtests[0].missingCandles;
+    expect(() => validateBackup(legacy)).not.toThrow();
+  });
   it('does not duplicate records when the same backup is imported twice', () => {
     const backup = fixture();
     storage.importBackup(backup);

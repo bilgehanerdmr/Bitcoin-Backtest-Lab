@@ -103,12 +103,10 @@ export function PriceChart({
       );
     });
     if (candles.length && !fit.current) {
-      chart.current
-        .timeScale()
-        .setVisibleLogicalRange({
-          from: Math.max(0, candles.length - 110),
-          to: candles.length + 3,
-        });
+      chart.current.timeScale().setVisibleLogicalRange({
+        from: Math.max(0, candles.length - 110),
+        to: candles.length + 3,
+      });
       fit.current = true;
     }
   }, [candles, indicators, fast, slow]);

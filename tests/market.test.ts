@@ -49,6 +49,34 @@ describe('Historical data provider', () => {
       expect(fetch).toHaveBeenCalledTimes(2);
     },
   );
+  // Binance answers from startTime onward, so a later candle proves the skipped ones never existed.
+  const outage = (missing: number[]) =>
+    vi.fn(async (url: string) => {
+      const cursor = Number(new URL(url).searchParams.get('startTime')) / 1000,
+        rows = [];
+      for (let t = cursor; t <= start + 20 * 3600; t += 3600)
+        if (!missing.includes((t - start) / 3600)) rows.push(row(t));
+      return new Response(JSON.stringify(rows));
+    });
+  it('skips candles Binance never produced and remembers the outage', async () => {
+    const fetch = outage([3, 4, 5]);
+    vi.stubGlobal('fetch', fetch);
+    const data = await market.getCandles('1h', start, start + 10 * 3600);
+    expect(data.map((b) => (b.time - start) / 3600)).toEqual([0, 1, 2, 6, 7, 8, 9, 10]);
+    expect(await market.getCandles('1h', start, start + 10 * 3600)).toEqual(data);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+  it('confirms an outage at the end of the range from the next available candle', async () => {
+    vi.stubGlobal('fetch', outage([3, 4, 5]));
+    const data = await market.getCandles('1h', start, start + 4 * 3600);
+    expect(data.map((b) => (b.time - start) / 3600)).toEqual([0, 1, 2]);
+  });
+  it('rejects a range that falls entirely inside an outage', async () => {
+    vi.stubGlobal('fetch', outage([3, 4, 5]));
+    await expect(market.getCandles('1h', start + 3 * 3600, start + 5 * 3600)).rejects.toThrow(
+      /borsa kesintisi/,
+    );
+  });
   it('rejects incomplete historical ranges instead of quietly testing partial data', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('[]')));
     await expect(market.getCandles('1h', start, start + 5 * 3600)).rejects.toThrow(
@@ -71,15 +99,22 @@ describe('Historical data provider', () => {
       .fn()
       .mockResolvedValue(new Response('{}', { status: 429, headers: { 'Retry-After': '120' } }));
     vi.stubGlobal('fetch', fetch);
-    await expect(market.binance('ticker/24hr')).rejects.toThrow(/istek sınırı/);
-    await expect(market.binance('ticker/24hr')).rejects.toThrow(/Biraz sonra/);
+    await expect(market.binance('ticker/24hr')).rejects.toMatchObject({
+      status: 503,
+      message: expect.stringMatching(/istek sınırı/),
+    });
+    await expect(market.binance('ticker/24hr')).rejects.toMatchObject({
+      status: 503,
+      message: expect.stringMatching(/Biraz sonra/),
+    });
     expect(fetch).toHaveBeenCalledTimes(1);
   });
   it('turns network failures into an actionable error without fabricating data', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network')));
-    await expect(market.getCandles('1h', start, start + 3600)).rejects.toThrow(
-      /Binance bağlantısı kurulamadı/,
-    );
+    await expect(market.getCandles('1h', start, start + 3600)).rejects.toMatchObject({
+      status: 502,
+      message: expect.stringMatching(/Binance bağlantısı kurulamadı/),
+    });
     expect(market.db.prepare('SELECT COUNT(*) AS count FROM candles').get()).toMatchObject({
       count: 0,
     });

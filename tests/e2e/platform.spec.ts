@@ -66,6 +66,14 @@ test('demo strategy, persisted report, export, templates, comparisons and mobile
   await page.getByRole('button', { name: 'Şablonu kaydet', exact: true }).click();
   await page.locator('nav').getByRole('button', { name: 'Stratejiler', exact: true }).click();
   await expect(page.getByRole('heading', { name: templateName })).toBeVisible();
+  await page.getByRole('button', { name: 'Şablonu sil ' + templateName }).click();
+  await page
+    .getByRole('dialog', { name: 'Şablonu sil' })
+    .getByRole('button', { name: 'Silme işlemini onayla' })
+    .click();
+  await expect(page.getByRole('heading', { name: templateName })).toHaveCount(0);
+  const workspace = await (await page.request.get('/api/workspace')).json();
+  expect(workspace.presets.some((p: { name: string }) => p.name === templateName)).toBe(false);
   await page
     .locator('nav')
     .getByRole('button', { name: /Test Geçmişi/ })

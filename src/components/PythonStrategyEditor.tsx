@@ -26,9 +26,11 @@ export function PythonStrategyEditor({
   const [busy, setBusy] = useState(false);
   const dialog = useRef<HTMLElement>(null);
   const closeRef = useRef(onClose);
-  closeRef.current = onClose;
   const busyRef = useRef(busy);
-  busyRef.current = busy;
+  useEffect(() => {
+    closeRef.current = onClose;
+    busyRef.current = busy;
+  });
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     dialog.current?.querySelector<HTMLInputElement>('input')?.focus();
@@ -142,8 +144,8 @@ export function PythonStrategyEditor({
                     };
                     validatePythonStrategy(next);
                     change(next);
-                  } catch (e) {
-                    setError((e as Error).message);
+                  } catch (err) {
+                    setError((err as Error).message);
                   } finally {
                     setBusy(false);
                   }

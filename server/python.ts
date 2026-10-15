@@ -9,6 +9,7 @@ import {
   type PythonStrategy,
   type PythonSignal,
 } from '../shared/python-strategy';
+import { HttpError } from './errors';
 
 const runner = fileURLToPath(new URL('./python-runner.py', import.meta.url));
 export async function runPython(
@@ -52,8 +53,10 @@ export async function runPython(
       }, options.timeoutMs ?? 15000);
       child.on('error', (error: NodeJS.ErrnoException) => {
         clearTimeout(timer);
+        // A missing or broken interpreter is a server setup problem, not a strategy error.
         reject(
-          new Error(
+          new HttpError(
+            500,
             error.code === 'ENOENT'
               ? 'Python bulunamadı. Python 3.9+ kurun veya BTC_PYTHON ile Python çalıştırıcısının yolunu belirtin.'
               : 'Python başlatılamadı: ' + error.message,

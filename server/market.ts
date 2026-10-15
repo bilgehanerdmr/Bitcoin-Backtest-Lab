@@ -1,15 +1,19 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { intervals, type Candle, type Interval } from '../shared/types';
+import { HttpError } from './errors';
 mkdirSync('data', { recursive: true });
 export const db = new DatabaseSync(process.env.DATABASE_PATH || 'data/bitcoin-lab.sqlite');
 db.exec(
-  'PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS candles (interval TEXT, time INTEGER, open REAL, high REAL, low REAL, close REAL, volume REAL, PRIMARY KEY(interval,time)); CREATE TABLE IF NOT EXISTS backtests (id TEXT PRIMARY KEY, created_at TEXT, payload TEXT);',
+  'PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS candles (interval TEXT, time INTEGER, open REAL, high REAL, low REAL, close REAL, volume REAL, PRIMARY KEY(interval,time)); CREATE TABLE IF NOT EXISTS backtests (id TEXT PRIMARY KEY, created_at TEXT, payload TEXT); CREATE TABLE IF NOT EXISTS candle_gaps (interval TEXT, time INTEGER, PRIMARY KEY(interval,time));',
 );
 let retryAfter = 0;
 export async function binance(path: string, params: Record<string, string> = {}) {
   if (Date.now() < retryAfter)
-    throw new Error('Veri sağlayıcının istek sınırına ulaşıldı. Biraz sonra tekrar deneyin.');
+    throw new HttpError(
+      503,
+      'Veri sağlayıcının istek sınırına ulaşıldı. Biraz sonra tekrar deneyin.',
+    );
   let response: Response;
   try {
     response = await fetch(
@@ -17,17 +21,22 @@ export async function binance(path: string, params: Record<string, string> = {})
       { signal: AbortSignal.timeout(12000) },
     );
   } catch {
-    throw new Error(
+    throw new HttpError(
+      502,
       'Binance bağlantısı kurulamadı. İnternet bağlantınızı kontrol edin veya demo moduna geçin.',
     );
   }
   if (response.status === 429 || response.status === 418) {
     retryAfter =
       Date.now() + Math.max(60, Number(response.headers.get('retry-after')) || 60) * 1000;
-    throw new Error('Binance istek sınırı. Lütfen daha sonra tekrar deneyin.');
+    throw new HttpError(503, 'Binance istek sınırı. Lütfen daha sonra tekrar deneyin.');
   }
-  if (!response.ok) throw new Error(`Binance verisi alınamadı (HTTP ${response.status}).`);
-  return response.json();
+  if (!response.ok) throw new HttpError(502, `Binance verisi alınamadı (HTTP ${response.status}).`);
+  try {
+    return await response.json();
+  } catch {
+    throw new HttpError(502, 'Binance geçersiz bir yanıt döndürdü.');
+  }
 }
 let queue: Promise<unknown> = Promise.resolve();
 export function getCandles(interval: Interval, start: number, end: number): Promise<Candle[]> {
@@ -52,27 +61,45 @@ async function loadCandles(interval: Interval, start: number, end: number): Prom
         'SELECT time,open,high,low,close,volume FROM candles WHERE interval=? AND time>=? AND time<=? ORDER BY time',
       )
       .all(interval, from, to) as unknown as Candle[];
+  // Open times Binance never produced (exchange outages), cached so they are not refetched.
+  const covered = (candles: Candle[]) =>
+    new Set([
+      ...candles.map((b) => b.time),
+      ...(
+        db
+          .prepare('SELECT time FROM candle_gaps WHERE interval=? AND time>=? AND time<=?')
+          .all(interval, from, to) as { time: number }[]
+      ).map((g) => g.time),
+    ]);
   const existing = read();
-  if (existing.length === count) return existing;
-  const known = new Set(existing.map((b) => b.time));
-  const insert = db.prepare('INSERT OR REPLACE INTO candles VALUES(?,?,?,?,?,?,?)');
+  const known = covered(existing);
+  if (known.size === count) return existing;
+  const insert = db.prepare('INSERT OR REPLACE INTO candles VALUES(?,?,?,?,?,?,?)'),
+    insertGap = db.prepare('INSERT OR IGNORE INTO candle_gaps VALUES(?,?)');
   let cursor = from;
   while (cursor <= to) {
     if (known.has(cursor)) {
       cursor += step;
       continue;
     }
+    // No endTime: a later candle, even one past `to`, is what proves a skipped open time
+    // does not exist on Binance. Missing candles with nothing after them stay unproven.
     const rows = (await binance('klines', {
       interval,
       startTime: String(cursor * 1000),
-      endTime: String((to + step) * 1000 - 1),
       limit: '1000',
     })) as unknown[][];
     if (!Array.isArray(rows) || !rows.length) break;
     db.exec('BEGIN');
     try {
+      let expected = cursor;
       for (const row of rows) {
         const time = Number(row[0]) / 1000;
+        if (!Number.isInteger(time) || time % step !== 0 || time < expected)
+          throw new HttpError(502, 'Veri sağlayıcı geçersiz mum döndürdü.');
+        for (; expected < Math.min(time, to + step); expected += step)
+          insertGap.run(interval, expected);
+        expected = time + step;
         if (time >= from && time <= to) {
           const values = [
             Number(row[1]),
@@ -82,7 +109,7 @@ async function loadCandles(interval: Interval, start: number, end: number): Prom
             Number(row[5]),
           ];
           if (!values.every(Number.isFinite))
-            throw new Error('Veri sağlayıcı geçersiz mum döndürdü.');
+            throw new HttpError(502, 'Veri sağlayıcı geçersiz mum döndürdü.');
           insert.run(interval, time, ...values);
         }
       }
@@ -92,14 +119,20 @@ async function loadCandles(interval: Interval, start: number, end: number): Prom
       throw e;
     }
     const next = Number(rows.at(-1)![0]) / 1000 + step;
-    if (next <= cursor) throw new Error('Veri sayfalaması ilerleyemedi.');
+    if (next <= cursor) throw new HttpError(502, 'Veri sayfalaması ilerleyemedi.');
     cursor = next;
     if (cursor <= to) await new Promise((resolve) => setTimeout(resolve, 150));
   }
-  const result = read();
-  if (result.length !== count)
+  const result = read(),
+    unresolved = count - covered(result).size;
+  if (unresolved)
+    throw new HttpError(
+      502,
+      `Eksik tarihsel veri: ${count} mumdan ${unresolved} tanesi alınamadı. Binance son mumları henüz yayınlamamış olabilir; biraz sonra tekrar deneyin veya tarih aralığını kontrol edin.`,
+    );
+  if (!result.length)
     throw new Error(
-      `Eksik tarihsel veri: ${count} mumdan ${result.length} tanesi mevcut. Tarih aralığını kontrol edin.`,
+      'Binance bu aralıkta işlem yapmamış (borsa kesintisi). Tarih aralığını değiştirin.',
     );
   return result;
 }

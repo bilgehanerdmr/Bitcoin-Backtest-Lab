@@ -1,0 +1,29 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // Oxlint instead of ESLint: typescript-eslint needs the TypeScript JS API, which
+  // TypeScript 7 (used by this project) no longer ships.
+  "plugins": ["typescript", "unicorn", "oxc", "react", "import", "vitest"],
+  "categories": { "correctness": "error", "suspicious": "warn" },
+  "ignorePatterns": ["dist/**", "test-results/**", "playwright-report/**"],
+  "rules": {
+    // Destructuring a key out is how a field is omitted (e.g. equity from report summaries).
+    "no-unused-vars": ["error", { "ignoreRestSiblings": true, "argsIgnorePattern": "^_" }],
+    // Not in a default category, but hook order bugs break rendering.
+    "react/rules-of-hooks": "error",
+    // The react-jsx transform needs no React import.
+    "react/react-in-jsx-scope": "off",
+    // React Compiler purity rules; this app does not use the compiler.
+    "react/purity": "off",
+    "react/set-state-in-effect": "off",
+    // Express 5 forwards rejected promises to the error handler.
+    "oxc/no-async-endpoint-handlers": "off",
+    // Vite imports stylesheets for their side effects.
+    "import/no-unassigned-import": ["warn", { "allow": ["**/*.css"] }],
+    // Style preferences that do not point at defects.
+    "unicorn/consistent-function-scoping": "off",
+    "unicorn/prefer-add-event-listener": "off",
+    "unicorn/no-array-sort": "off",
+    "vitest/require-mock-type-parameters": "off",
+    "vitest/require-to-throw-message": "off"
+  }
+}

@@ -15,5 +15,5 @@ it.each([
     status = vi.fn(() => ({ json }));
   localAccess({ headers } as Request, { status } as unknown as Response, next);
   expect(next).toHaveBeenCalledTimes(allowed ? 1 : 0);
-  if (!allowed) expect(status).toHaveBeenCalledWith(403);
+  expect(status.mock.calls).toEqual(allowed ? [] : [[403]]);
 });

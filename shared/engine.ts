@@ -1,5 +1,6 @@
 import {
   intervals,
+  LIVE_DATA_START,
   type Candle,
   type Config,
   type Result,
@@ -60,6 +61,13 @@ export function validateConfig(c: Config) {
     );
   if (start > Date.now()) throw new Error('Başlangıç tarihi gelecekte olamaz.');
 }
+// Kept out of validateConfig so stored presets and reports stay loadable.
+export function validateLiveRange(c: Config) {
+  if (c.mode === 'live' && c.start < LIVE_DATA_START)
+    throw new Error(
+      `Binance BTC/USDT verileri ${LIVE_DATA_START} tarihinde başlar. Bu tarih veya sonrasını seçin.`,
+    );
+}
 export function sma(values: number[], period: number): (number | null)[] {
   let sum = 0;
   return values.map((v, i) => {
@@ -111,6 +119,8 @@ export function backtest(
               : c.lookback;
   if (candles.length < warmup + 3)
     throw new Error(`En az ${warmup + 3} kapanmış mum gerekli. Tarih aralığını genişletin.`);
+  const step = intervals[c.interval];
+  // Holes are allowed: the data layer only admits open times Binance confirms it never had.
   candles.forEach((b, i) => {
     if (
       ![b.time, b.open, b.high, b.low, b.close, b.volume].every(Number.isFinite) ||
@@ -119,9 +129,10 @@ export function backtest(
       b.high < Math.max(b.open, b.close) ||
       b.low > Math.min(b.open, b.close) ||
       b.high < b.low ||
-      (i > 0 && b.time - candles[i - 1].time !== intervals[c.interval])
+      b.time % step !== 0 ||
+      (i > 0 && b.time <= candles[i - 1].time)
     )
-      throw new Error('Veride geçersiz, sırasız veya eksik mum var.');
+      throw new Error('Veride geçersiz, sırasız veya yinelenen mum var.');
   });
   const closes = candles.map((b) => b.close),
     fast = sma(closes, c.fast),
@@ -243,6 +254,7 @@ export function backtest(
     config: structuredClone(c),
     source: c.mode === 'demo' ? 'Sentetik demo' : 'Binance Spot',
     candleCount: candles.length,
+    missingCandles: (candles.at(-1)!.time - candles[0].time) / step + 1 - candles.length,
     start: candles[0].time,
     end: candles.at(-1)!.time,
     trades,

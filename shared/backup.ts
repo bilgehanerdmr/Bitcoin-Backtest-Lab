@@ -86,6 +86,7 @@ export function validateBackup(input: unknown): asserts input is Backup {
       r.source !== (r.config.mode === 'demo' ? 'Sentetik demo' : 'Binance Spot')
     )
       fail('rapor veri yapısı geçersiz.');
+    const step = intervals[r.config.interval];
     for (let i = 0; i < r.equity.length; i++) {
       const p = r.equity[i];
       if (
@@ -96,11 +97,15 @@ export function validateBackup(input: unknown): asserts input is Backup {
         p.benchmark < 0 ||
         p.drawdown > 0 ||
         p.drawdown < -100 ||
-        p.time !== r.start + i * intervals[r.config.interval]
+        p.time % step !== 0 ||
+        (i ? p.time <= r.equity[i - 1].time : p.time !== r.start)
       )
         fail('geçersiz sermaye eğrisi.');
     }
     if (r.equity.at(-1)!.time !== r.end) fail('rapor tarih aralığı tutarsız.');
+    // Exchange outages are the only holes a report may have, and it must declare them.
+    if ((r.end - r.start) / step + 1 - r.candleCount !== (r.missingCandles ?? 0))
+      fail('rapordaki eksik mum sayısı tutarsız.');
     let lastExit = r.start;
     for (let i = 0; i < r.trades.length; i++) {
       const t = r.trades[i];

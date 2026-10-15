@@ -112,6 +112,16 @@
 .icon-button.danger {
   color: #bd7a86;
 }
+.preset-actions {
+  margin-top: 12px;
+}
+.strategy-card .preset-actions .secondary {
+  flex: 1;
+  margin-top: 0;
+}
+.preset-actions .icon-button {
+  flex-shrink: 0;
+}
 .history-load-more {
   display: flex;
   justify-content: center;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { backtest, rsi, sma, validateConfig } from '../shared/engine';
+import { backtest, rsi, sma, validateConfig, validateLiveRange } from '../shared/engine';
 import { demoCandles } from '../shared/demo';
 import { defaultConfig, intervals, type Candle, type Config } from '../shared/types';
 const config: Config = {
@@ -113,10 +113,29 @@ describe('Backtest execution', () => {
   );
 });
 describe('Data and configuration guards', () => {
-  it('rejects missing or duplicate candles', () => {
-    const data = bars();
-    data[3].time += 3600;
-    expect(() => backtest(data, config)).toThrow(/eksik/);
+  it('rejects duplicate or unaligned candles', () => {
+    for (const shift of [3600, 1800]) {
+      const data = bars();
+      data[3].time += shift;
+      expect(() => backtest(data, config)).toThrow(/sırasız veya yinelenen/);
+    }
+  });
+  it('runs across exchange outages and reports the skipped candles', () => {
+    const data = bars([100, 90, 80, 80, 80, 90, 95]).filter((_, i) => i !== 4),
+      result = backtest(data, config);
+    expect(result.missingCandles).toBe(1);
+    expect(result.candleCount).toBe(6);
+    expect(result.equity.map((p) => p.time)).toEqual(data.map((b) => b.time));
+    expect(result.trades[0].entryTime).toBe(data[3].time);
+    expect(backtest(bars(), config).missingCandles).toBe(0);
+  });
+  it('rejects live ranges that start before Binance listed BTCUSDT', () => {
+    const range = { start: '2017-08-01', end: '2017-09-01' };
+    expect(() => validateLiveRange({ ...config, ...range, mode: 'live' })).toThrow(/2017-08-17/);
+    expect(() => validateLiveRange({ ...config, ...range, mode: 'demo' })).not.toThrow();
+    expect(() =>
+      validateLiveRange({ ...config, start: '2017-08-17', end: '2017-09-01', mode: 'live' }),
+    ).not.toThrow();
   });
   it('rejects malformed OHLC', () => {
     const data = bars();

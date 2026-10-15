@@ -158,6 +158,8 @@ export function useMarket(interval: Interval, mode: Mode) {
       clearInterval(poll);
       socket?.close();
     };
+    // `retry` is a counter whose only job is to restart the connection.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies
   }, [interval, mode, retry]);
   return {
     candles,

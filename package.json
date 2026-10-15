@@ -10,10 +10,12 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit",
-    "format": "prettier --write ."
+    "lint": "oxlint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "keywords": [],
-  "author": "",
+  "author": "Bilgehan Erdemir",
   "license": "ISC",
   "type": "module",
   "dependencies": {
@@ -31,6 +33,7 @@
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "concurrently": "^10.0.5",
+    "oxlint": "^1.86.0",
     "prettier": "^3.9.6",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2",

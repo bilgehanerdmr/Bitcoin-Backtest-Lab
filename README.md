@@ -15,7 +15,7 @@ npm ci
 npm run dev
 ```
 
-Mevcut çalışma alanının taşınabilir kopyası **`backups/initial-workspace.json`** dosyasındadır. Platformda **Veri Merkezi → Yedek dosyası seç** üzerinden bu dosyayı açıp **İçe aktarmayı başlat** düğmesine basın. Dosya; alındığı andaki tüm mumları, raporları, özel strateji kurallarını, şablonları ve varsayılan ayarları içerir. Otomatik olarak içe aktarılmaz ve sonraki yerel değişikliklerle kendiliğinden güncellenmez. Güncel verileri taşımak için uygulamadan yeni bir yedek dışa aktarın.
+Mevcut çalışma alanının taşınabilir kopyası **`backups/initial-workspace.json`** dosyasındadır. Platformda **Veri Merkezi → Yedek dosyası seç** üzerinden bu dosyayı açıp **İçe aktarmayı başlat** düğmesine basın. Dosya; alındığı andaki mumları ve raporları içerir. Otomatik testlerin oluşturduğu şablon ve raporlar dosyadan çıkarılmıştır. Otomatik olarak içe aktarılmaz ve sonraki yerel değişikliklerle kendiliğinden güncellenmez. Güncel verileri taşımak için uygulamadan yeni bir yedek dışa aktarın.
 
 Çalışan SQLite dosyaları, bağımlılık klasörü ve oluşturulmuş derleme/test çıktıları Git tarafından dışarıda tutulur. Veriler depoda taşınabilir JSON yedeği olarak bulunur.
 
@@ -37,13 +37,13 @@ npm run build
 npm start
 ```
 
-Bu modda arayüz ve API birlikte **http://127.0.0.1:3001** üzerinden sunulur. `PORT` ile sunucu portu değiştirilebilir. Geliştirme proxy'si varsayılan 3001 portunu kullanır.
+Bu modda arayüz ve API birlikte **http://127.0.0.1:3001** üzerinden sunulur. `PORT` ile sunucu portu değiştirilebilir; `npm run dev` sırasında geliştirme proxy'si de aynı `PORT` değerini kullanır.
 
 ## Özellikler
 
 - Binance Spot BTC/USDT gerçek zamanlı WebSocket fiyatları ve mum grafiği; yeniden bağlanma ve 30 saniyelik REST yedeği.
 - 1m, 5m, 15m, 1h, 4h, 1d mumlar; kaydırma, yakınlaştırma, SMA göstergeleri ve hacim.
-- Tarih aralığına göre sayfalı geçmiş veri indirme, veri eksikliği kontrolü ve SQLite önbelleği.
+- Tarih aralığına göre sayfalı geçmiş veri indirme, veri eksikliği kontrolü, Binance kesintilerinin doğrulanması ve SQLite önbelleği.
 - SMA kesişimi, Wilder RSI ortalamaya dönüş ve Donchian kanal kırılımı stratejileri.
 - Özel mum stratejisi editörü: fiyat, gövde, fitil, yüzde ve hacim koşulları; ayrı giriş/çıkış grupları ve kaydedilebilir formasyonlar.
 - Python Strateji Atölyesi: `.py` yükleme, kod düzenleme, sözdizimi kontrolü, yerel şablon kaydı ve Python sinyalleriyle backtest.
@@ -91,7 +91,7 @@ Grafikler [TradingView Lightweight Charts™](https://www.tradingview.com/) ile 
 
 ## Backtest metodolojisi
 
-1. Sadece kapanmış ve kesintisiz OHLCV mumları kullanılır. En fazla 50.000 mum işlenir. Gelecekteki bitiş tarihleri son kapanmış muma kırpılır.
+1. Sadece kapanmış ve kesintisiz OHLCV mumları kullanılır. Tek istisna Binance'in kendi kesintileridir (ör. 8–9 Şubat 2018 bakımı, 24 Mart 2023 12:39–14:00 UTC): Binance daha sonraki bir mumu döndürdüğünde atlanan mumların borsada hiç oluşmadığı kesinleşir; bu mumlar uydurulmaz, atlanır ve raporda sayıları gösterilir. Sonrası henüz yayınlanmamış eksik mumlar hata verir. Canlı veri 17 Ağustos 2017'de (BTCUSDT listelemesi) başlar; daha önceki başlangıç tarihleri reddedilir. En fazla 50.000 mum işlenir. Gelecekteki bitiş tarihleri son kapanmış muma kırpılır. Kesintiden sonraki ilk mum, göstergeler ve mum kuralları için “bir önceki mum” sayılır.
 2. Göstergelerin ısınması seçilen aralık içindedir. Önceki kapanışta hesaplanan sinyal bir sonraki mum açılışında işlenir. Spot, long-only, kaldıraçsız ve tek pozisyon modelidir.
 3. Alım fiyatı kayma kadar artırılır, satış fiyatı azaltılır. Her iki yönde komisyon alınır. Pozisyon bütçesi giriş komisyonunu içerir; kullanılmayan sermaye nakitte kalır.
 4. Stop-loss / take-profit girişteki kaymalı fiyata göre belirlenir. 0 değeri kuralı kapatır. Bir mumda iki seviye de aşılırsa stop-loss önce işlenir. Açılıştaki stop boşluğu o mumun açılışından doldurulur. Ardından strateji çıkış sinyali ve mum içi seviyeler değerlendirilir.
@@ -136,7 +136,7 @@ def on_candle(candles, state):
     return "hold"
 ```
 
-- `candles`, o ana kadar kapanmış mumların salt okunur sıralı görünümüdür; indeksleme, dilimleme, döngü ve `len()` desteklenir. Fonksiyona gelecek mumlar verilmez. Her mumda `time` (UTC Unix saniyesi), `open`, `high`, `low`, `close`, `volume` (BTC) alanları bulunur.
+- `candles`, o ana kadar kapanmış mumların salt okunur sıralı görünümüdür; indeksleme, dilimleme, döngü ve `len()` desteklenir. Fonksiyona gelecek mumlar verilmez. Binance kesintilerinde ardışık iki mumun `time` farkı zaman diliminden büyük olabilir. Her mumda `time` (UTC Unix saniyesi), `open`, `high`, `low`, `close`, `volume` (BTC) alanları bulunur.
 - Fonksiyon her mum için çağrılır; göstergelerinizin ısınma süresini kendi kodunuzda kontrol edin. Son mumdaki sinyal için sonraki mum bulunmadığından yeni işlem açılmaz.
 - `state`, test başında boş olan ve çağrılar arasında korunan sözlüktür. Kendi hesaplamalarınızı saklayın. Gerçek portföy veya açık pozisyon bilgisi değildir; pozisyon açıldığını varsayan sayaçlar stop-loss/take-profit ile uyuşmayabilir.
 - `"buy"` long giriş, `"sell"` long çıkış, `"hold"` veya `None` bekleme sinyalidir. İşlemler sonraki mumun açılışında gerçekleşir. Açık pozisyonda alım ve boş portföyde satış yok sayılır. Short ve pozisyon artırma desteklenmez.
@@ -153,6 +153,7 @@ Python kaynakları şablon ve raporlarla birlikte **Veri Merkezi** yedeklerine d
 ## Test geçmişini silme ve başka bilgisayara taşıma
 
 - **Test Geçmişi:** Satırdaki çöp kutusuyla bir raporu veya kutucuklarla birden fazla raporu seçip **Seçilenleri sil** ile kaldırın. Onay penceresinde seçili raporlar gösterilir. Mumlar, strateji şablonları ve önceden indirilmiş yedek dosyaları silinmez. **Daha eski raporları yükle** ile ilk 100 rapordan öncekilere erişebilirsiniz.
+- **Stratejiler → Kaydettiğiniz Şablonlar:** Şablon kartındaki çöp kutusuyla şablonu kaldırın. Bu şablonla oluşturulan raporlar ve mum verileri korunur.
 - **Veri Merkezi → Tüm verileri dışa aktar:** Yerel deponun tamamını sürümlü bir JSON yedeği olarak indirir: tüm zaman dilimlerindeki mumlar, tüm raporlar/işlemler/sermaye eğrileri, özel strateji kuralları, şablonlar ve risk varsayılanları.
 - Diğer bilgisayarda bu projenin kodunu kopyalayın, `npm install` ve `npm run dev` çalıştırın. **Veri Merkezi → Yedek dosyası seç** ile JSON dosyasını açın, içerik sayımlarını inceleyip **İçe aktarmayı başlat** düğmesine basın.
 
@@ -166,16 +167,22 @@ Yedek bir dosya olarak sizin kontrolünüzdedir; otomatik bulut senkronizasyonu 
 
 ```sh
 npm test
+npm run lint
+npm run format:check
 npm run build
 ```
 
-Tarayıcı uçtan uca testleri, yerel geliştirme sunucusu açıkken ve Google Chrome kuruluysa:
+Lint için ESLint yerine [Oxlint](https://oxc.rs/docs/guide/usage/linter) kullanılır: ESLint'in TypeScript eklentisi, projenin kullandığı TypeScript 7'de bulunmayan TypeScript JavaScript API'sine ihtiyaç duyar. Kurallar `.oxlintrc.json` içindedir.
+
+GitHub'a gönderilen her commit ve pull request'te `.github/workflows/ci.yml` tür denetimi, lint, biçim kontrolü, birim testleri ve derlemeyi Node 22.13 ile 24 üzerinde; tarayıcı testlerini ayrıca Chrome üzerinde çalıştırır.
+
+Tarayıcı uçtan uca testleri (Google Chrome kurulu olmalı):
 
 ```sh
 npm run test:e2e
 ```
 
-Testler demo backtesti, rapor kalıcılığı, CSV indirme, şablon kaydetme, karşılaştırma ve mobil taşma kontrolünü içerir. Ekran görüntüleri `test-results/` içine yazılır. Test sırasında oluşturulan demo raporu yerel geçmişte kalır; izole test için sunucuyu farklı `DATABASE_PATH` ile başlatın.
+Testler demo backtesti, rapor kalıcılığı, CSV indirme, şablon kaydetme, karşılaştırma ve mobil taşma kontrolünü içerir. Ekran görüntüleri `test-results/` içine yazılır. Playwright kendi geliştirme sunucusunu 5273 (arayüz) ve 3101 (API) portlarında, geçici dizinde yeni bir SQLite dosyasıyla başlatır; `data/` içindeki verileriniz ve yedekleriniz etkilenmez. Çalışan bir sunucuya karşı test etmek için `PLAYWRIGHT_BASE_URL` belirtin; bu durumda testlerin oluşturduğu kayıtlar o sunucunun veritabanında kalır.
 
 Gerçek Binance bağlantısını ve gerçek verili backtesti ayrıca test etmek için:
 
@@ -184,3 +191,7 @@ LIVE_TESTS=1 npm run test:e2e -- live.spec.ts
 ```
 
 Bu entegrasyon testi internet erişimi gerektirir; standart test çalıştırmasında atlanır. Birim testleri geçici bellek veritabanıyla 1000 mum üzeri sayfalamayı, önbelleği, eksik veriyi, kapanmamış mumları ve 429 bekleme kuralını da doğrular.
+
+## Lisans
+
+ISC. Ayrıntılar için [LICENSE](LICENSE) dosyasına bakın.
