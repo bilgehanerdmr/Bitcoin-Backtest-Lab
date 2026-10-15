@@ -30,7 +30,11 @@ test('one-minute demo chart, backtest, saved report and mobile timeframe control
     .locator('nav')
     .getByRole('button', { name: /Test Geçmişi/ })
     .click();
-  await page.locator('tbody').getByRole('button', { name: 'Rapor' }).first().click();
+  await page
+    .getByRole('row')
+    .filter({ has: page.getByRole('checkbox', { name: 'Karşılaştır ' + result.id, exact: true }) })
+    .getByRole('button', { name: 'Rapor', exact: true })
+    .click();
   await expect(page.getByRole('combobox', { name: 'Zaman dilimi', exact: true })).toHaveValue('1m');
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole('button', { name: '1m', exact: true })).toBeVisible();
