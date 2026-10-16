@@ -9,8 +9,9 @@ export const PAPER_MAX_CANDLES = 50000;
 export const MAX_WARMUP = 5000;
 export const DEFAULT_WARMUP = 300;
 export type PaperStatus = 'running' | 'waiting' | 'error' | 'stopped';
+// Only in sessions saved before demo mode was removed.
 export type DemoSpeed = 'realtime' | 'fast';
-export type FeedStatus = 'connecting' | 'live' | 'reconnecting' | 'demo';
+export type FeedStatus = 'connecting' | 'live' | 'reconnecting';
 export const paperStatusLabels: Record<PaperStatus, string> = {
   running: 'Çalışıyor',
   waiting: 'Bekliyor',
@@ -20,7 +21,6 @@ export const paperStatusLabels: Record<PaperStatus, string> = {
 export interface PaperStart {
   config: Config;
   warmup: number;
-  demoSpeed?: DemoSpeed;
 }
 export interface PaperSignal {
   time: number;
@@ -69,7 +69,7 @@ export interface PaperSession {
   stopReason: string | null;
   reportId: string | null;
   comparison: PaperComparison | null;
-  // Fast demo clock: simulated time `simAt` at real time `realAt` (ms), one candle per second.
+  // Legacy: the fast demo clock of sessions saved before demo mode was removed; always null now.
   clock: { simAt: number; realAt: number } | null;
 }
 export interface PaperView extends PaperSession {
@@ -92,7 +92,7 @@ export function validatePaperStart(input: unknown): asserts input is PaperStart 
   const min = minWarmup(s.config);
   if (!Number.isInteger(s.warmup) || s.warmup < min || s.warmup > MAX_WARMUP)
     throw new Error(`Isınma mumu sayısı ${min}–${MAX_WARMUP} arasında bir tam sayı olmalı.`);
-  if (s.config.mode === 'demo' && !['realtime', 'fast'].includes(s.demoSpeed as string))
-    throw new Error('Demo hızı seçin.');
+  if (s.config.mode === 'demo')
+    throw new Error('Demo modu kaldırıldı; canlı test Binance verisiyle çalışır.');
 }
 export const utcDate = (time: number) => new Date(time * 1000).toISOString().slice(0, 10);

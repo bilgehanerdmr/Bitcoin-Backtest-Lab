@@ -1,11 +1,9 @@
 import { test, expect, type Page } from '@playwright/test';
-import type { PaperView } from '../../shared/paper';
+import type { PaperDetail, PaperView } from '../../shared/paper';
 
-// The labelled synthetic demo stream closes one candle per second and needs no internet;
-// Playwright's own server and throwaway database run it.
+// Runs against the local Binance stand-in (tests/support/fake-binance.ts) in real time, so a
+// one-minute candle closes once a minute; the sessions below share that wait.
 async function openPaper(page: Page) {
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Demo', exact: true }).click();
   await page.locator('nav').getByRole('button', { name: 'Canlı Test', exact: true }).click();
   await page.getByRole('combobox', { name: 'Zaman dilimi', exact: true }).selectOption('1m');
 }
@@ -19,23 +17,48 @@ async function startSession(page: Page): Promise<PaperView> {
   return started.json();
 }
 
-test('runs a demo paper session, compares it with a backtest and saves the report', async ({
+test('runs SMA and Python sessions on the Binance stream, compares one and saves reports', async ({
   page,
+  request,
 }) => {
+  test.setTimeout(7 * 60000);
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/');
   await openPaper(page);
   await page.getByLabel('Hızlı ortalama').fill('3');
   await page.getByLabel('Yavaş ortalama').fill('8');
-  await expect(page.getByRole('combobox', { name: 'Demo akış hızı' })).toHaveValue('fast');
-  const session = await startSession(page);
-  expect(session).toMatchObject({ status: 'running', demoSpeed: 'fast', feed: 'demo' });
+  const sma = await startSession(page);
+  expect(sma).toMatchObject({ status: 'running', demoSpeed: null });
+  await page.getByRole('combobox', { name: 'Strateji', exact: true }).selectOption('python');
+  await page.getByRole('button', { name: /Python kodunu yükle/ }).click();
+  const dialog = page.getByRole('dialog', { name: 'Python strateji editörü' });
+  await dialog.getByLabel('Python strateji adı').fill('E2E canlı Python');
+  await dialog
+    .getByLabel('Python kodu', { exact: true })
+    .fill(
+      'def on_candle(candles, state):\n    print("kapanış", candles[-1]["close"])\n    return "buy" if len(candles) % 4 == 0 else "sell" if len(candles) % 4 == 2 else "hold"\n',
+    );
+  await dialog.getByRole('button', { name: 'Kaydet ve kullan' }).click();
+  await expect(dialog).not.toBeVisible();
+  await openPaper(page);
+  const python = await startSession(page);
+  const read = async (id: string): Promise<PaperDetail> =>
+    (await request.get('/api/paper/' + id)).json();
+  // Warmup came over REST; the stream then delivers each closed candle.
+  expect((await read(sma.id)).candleCount).toBeGreaterThanOrEqual(250);
+  await expect.poll(async () => (await read(sma.id)).feed, { timeout: 30000 }).toBe('live');
+  await expect
+    .poll(async () => (await read(sma.id)).tradingCandles, {
+      timeout: 6 * 60000,
+      intervals: [5000],
+    })
+    .toBeGreaterThanOrEqual(3);
   const view = page.getByRole('region', { name: 'Canlı test oturumu' });
+  await page.getByRole('tab', { name: /Hareketli Ortalama Kesişimi/ }).click();
   await expect(view.locator('.paper-status')).toHaveText('Çalışıyor');
-  await expect(view).toContainText('Demo akışı');
-  const compare = view.getByRole('button', { name: 'Aynı dönemi backtest et' });
-  await expect(compare).toBeEnabled({ timeout: 30000 });
-  await compare.click();
+  await expect(view).toContainText('Canlı akış');
+  await view.getByRole('button', { name: 'Aynı dönemi backtest et' }).click();
   const panel = view.getByLabel('Karşılaştırma', { exact: true });
   await expect(panel).toContainText('✓ İşlemler ve sermaye eğrisi birebir aynı.');
   await expect(panel.locator('tr.paper-diff')).toHaveCount(0);
@@ -45,6 +68,13 @@ test('runs a demo paper session, compares it with a backtest and saves the repor
   await page.screenshot({ path: 'test-results/paper-desktop.png', fullPage: true });
   await view.getByRole('button', { name: 'Durdur', exact: true }).click();
   await expect(view.locator('.paper-status')).toHaveText('Durdu');
+  await page.getByRole('tab', { name: /E2E canlı Python/ }).click();
+  await view.getByRole('button', { name: 'Python Logları' }).click();
+  await expect(view.getByLabel('Python logları')).toContainText('kapanış');
+  await view.getByRole('button', { name: 'Durdur', exact: true }).click();
+  await expect(view.locator('.paper-status')).toHaveText('Durdu');
+  expect((await read(python.id)).reportId).not.toBeNull();
+  await page.getByRole('tab', { name: /Hareketli Ortalama Kesişimi/ }).click();
   await view.getByRole('button', { name: 'Nihai raporu aç' }).click();
   const results = page.locator('.results-panel');
   await expect(results).toContainText('CANLI (PAPER)');
@@ -71,28 +101,6 @@ test('runs a demo paper session, compares it with a backtest and saves the repor
   expect(errors).toEqual([]);
 });
 
-test('shows Python logs from candles closed after the start', async ({ page }) => {
-  await openPaper(page);
-  await page.getByRole('combobox', { name: 'Strateji', exact: true }).selectOption('python');
-  await page.getByRole('button', { name: /Python kodunu yükle/ }).click();
-  const dialog = page.getByRole('dialog', { name: 'Python strateji editörü' });
-  await dialog.getByLabel('Python strateji adı').fill('E2E canlı Python ' + Date.now());
-  await dialog
-    .getByLabel('Python kodu', { exact: true })
-    .fill(
-      'def on_candle(candles, state):\n    print("kapanış", candles[-1]["close"])\n    return "buy" if len(candles) % 4 == 0 else "sell" if len(candles) % 4 == 2 else "hold"\n',
-    );
-  await dialog.getByRole('button', { name: 'Kaydet ve kullan' }).click();
-  await expect(dialog).not.toBeVisible();
-  await page.locator('nav').getByRole('button', { name: 'Canlı Test', exact: true }).click();
-  await startSession(page);
-  const view = page.getByRole('region', { name: 'Canlı test oturumu' });
-  await view.getByRole('button', { name: 'Python Logları' }).click();
-  await expect(view.getByLabel('Python logları')).toContainText('kapanış', { timeout: 30000 });
-  await view.getByRole('button', { name: 'Durdur', exact: true }).click();
-  await expect(view.locator('.paper-status')).toHaveText('Durdu');
-});
-
 test('limits concurrent sessions and rejects invalid settings', async ({ request }) => {
   const config = {
     strategy: 'sma',
@@ -111,28 +119,27 @@ test('limits concurrent sessions and rejects invalid settings', async ({ request
     rsiBuy: 30,
     rsiSell: 70,
     lookback: 20,
-    mode: 'demo',
+    mode: 'live',
   };
   // Earlier tests share this database; only sessions started here may be active.
   const existing: PaperView[] = await (await request.get('/api/paper')).json();
   for (const session of existing.filter((s) => s.status !== 'stopped'))
     await request.post(`/api/paper/${session.id}/stop`);
-  const invalid = await request.post('/api/paper', {
-    data: { config, warmup: 5, demoSpeed: 'realtime' },
-  });
-  expect(invalid.status()).toBe(400);
-  expect((await invalid.json()).error).toMatch(/Isınma mumu sayısı/);
+  for (const [data, error] of [
+    [{ config, warmup: 5 }, /Isınma mumu sayısı/],
+    [{ config: { ...config, mode: 'demo' }, warmup: 50 }, /Demo modu kaldırıldı/],
+  ] as const) {
+    const rejected = await request.post('/api/paper', { data });
+    expect(rejected.status()).toBe(400);
+    expect((await rejected.json()).error).toMatch(error);
+  }
   const ids: string[] = [];
   for (let i = 0; i < 3; i++) {
-    const started = await request.post('/api/paper', {
-      data: { config, warmup: 50, demoSpeed: 'realtime' },
-    });
+    const started = await request.post('/api/paper', { data: { config, warmup: 50 } });
     expect(started.ok()).toBe(true);
     ids.push((await started.json()).id);
   }
-  const fourth = await request.post('/api/paper', {
-    data: { config, warmup: 50, demoSpeed: 'realtime' },
-  });
+  const fourth = await request.post('/api/paper', { data: { config, warmup: 50 } });
   expect(fourth.status()).toBe(409);
   for (const id of ids) expect((await request.post(`/api/paper/${id}/stop`)).ok()).toBe(true);
 });

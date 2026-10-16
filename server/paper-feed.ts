@@ -15,7 +15,9 @@ export interface CandleFeed {
   status(): FeedStatus;
   close(): void;
 }
-const STREAM = 'wss://data-stream.binance.vision/stream?streams=';
+// Overridable so the browser tests can run against a local stand-in for Binance.
+const STREAM =
+  (process.env.BINANCE_STREAM_URL ?? 'wss://data-stream.binance.vision') + '/stream?streams=';
 const RETRY_MS = [1000, 2000, 5000, 10000, 30000];
 // Kline streams push several updates a minute; a silent socket is treated as dropped.
 const SILENT_MS = 60000;

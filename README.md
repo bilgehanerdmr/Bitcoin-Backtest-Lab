@@ -56,7 +56,7 @@ In this mode, both the interface and API are served at **http://127.0.0.1:3001**
 - Equity and drawdown charts, paginated trade history, and CSV export.
 - Automatically saved reports, comparison of up to three reports, individual/bulk deletion, and paginated loading of older reports.
 - Strategy templates and capital/risk defaults stored in SQLite.
-- Explicitly labelled, deterministic synthetic demo mode; it never activates automatically when live data fails.
+- Without access to Binance, uploaded datasets keep the workbench usable; nothing switches to made-up data.
 - Desktop and mobile layouts with a Turkish interface and UTC timestamps.
 
 For a one-minute backtest, select **Timeframe → 1m** (`Zaman dilimi → 1m`) in the terminal. Set the chart timeframe separately using the **1m** button above the chart. Historical one-minute candles are downloaded from Binance in pages and cached. The limit of 50,000 candles per test corresponds to about 34.7 days; select at most 34 days when using full days. The candle currently forming is excluded from the backtest.
@@ -164,9 +164,9 @@ The backtest rule applies: candles that Binance proves never existed, by returni
 - **Backtest the same period** (`Aynı dönemi backtest et`) re-reads the session's candles, runs the strategy again from scratch, and shows the result next to the live result. This backtest is saved to Test History labelled **Comparison** (`Karşılaştırma`). The live column is the final report the session would produce if stopped at that candle. Built-in strategies are expected to match exactly; for Python, a difference indicates non-deterministic code.
 - In paper and comparison reports, warmup uses candles before the trading start. A terminal backtest with the same dates warms up inside the range instead, so its result can differ; the report footnote states this.
 
-### Demo stream
+### Earlier demo mode
 
-In demo mode, paper trading runs offline on deterministic synthetic candles and is labelled **DEMO** throughout. With **Fast (1 candle / s)** (`Hızlı · 1 mum / sn`), the simulated clock runs ahead of real time and timestamps are synthetic; it pauses while the server is down or the session is in error. **Real time** (`Gerçek zaman`) follows the real clock.
+Earlier versions had a synthetic demo mode. It has been removed: results on made-up prices told users nothing about a strategy. Reports and templates saved in demo mode remain and are still labelled **DEMO**; running such a template again uses Binance data. A paper session left running in demo mode is stopped on the next start, and what it recorded stays viewable. The API rejects new demo requests with a clear message.
 
 ### Limits
 
@@ -180,7 +180,7 @@ In demo mode, paper trading runs offline on deterministic synthetic candles and 
 - `src/`: React + TypeScript interface and charts.
 - `shared/engine.ts`: standalone calculation engine and validation.
 - `server/`: Express API, Binance client, and SQLite persistence.
-- `data/bitcoin-lab.sqlite`: automatically created database for real candle caching and reports. Cached candles and confirmed exchange gaps are stored per trading pair (Binance USDT spot pairs; BTCUSDT today). A database from a version before pair support is converted once on startup: all existing candles are filed under BTCUSDT in a single transaction, with nothing removed. Demo candles are not stored in the real-data table; demo reports are saved with a source label.
+- `data/bitcoin-lab.sqlite`: automatically created database for real candle caching and reports. Cached candles and confirmed exchange gaps are stored per trading pair (Binance USDT spot pairs; BTCUSDT today). A database from a version before pair support is converted once on startup: all existing candles are filed under BTCUSDT in a single transaction, with nothing removed.
 - `DATABASE_PATH`: alternative SQLite file path. Its parent directory must already exist.
 - Templates and preferences are stored in the same SQLite file's `workspace` table. Legacy `localStorage` templates are merged into SQLite on first load; old keys are removed after a successful save.
 - `shared/upload.ts`: CSV reading, format detection and the quality report, shared by the browser preview and the server. `server/uploads.ts` stores datasets in the `uploads` and `upload_candles` tables.
@@ -259,7 +259,9 @@ Browser end-to-end tests require Google Chrome:
 npm run test:e2e
 ```
 
-Tests cover demo backtests, report persistence, CSV downloads, template saving, comparisons, the demo paper trading stream (start, comparison, stop, Python logs, session limit), uploading a Turkish Excel CSV and backtesting on it, and mobile overflow checks. Screenshots are written to `test-results/`. Playwright starts its own development server on ports 5273 (interface) and 3101 (API), using a new SQLite file in a temporary directory; your `data/` files and backups are unaffected. Set `PLAYWRIGHT_BASE_URL` to test against a running server; records created by the tests will then remain in that server's database.
+Tests cover backtests, report persistence, CSV downloads, template saving, comparisons, paper trading (start, comparison, stop, Python logs, session limit), uploading a Turkish Excel CSV and backtesting on it, and mobile overflow checks. Screenshots are written to `test-results/`. Playwright starts its own development server on ports 5273 (interface) and 3101 (API), using a new SQLite file in a temporary directory; your `data/` files and backups are unaffected.
+
+The browser tests do not need internet access. Playwright also starts `tests/support/fake-binance.ts`, a local stand-in for Binance's public REST and WebSocket market data on port 3109, and points the application at it through `BINANCE_REST_URL`, `BINANCE_STREAM_URL` and `VITE_BINANCE_STREAM_URL`. These variables default to Binance and are not needed otherwise. The stand-in derives prices from time alone and serves only closed candles, so the tests exercise the application's real Binance code paths: REST pagination, the kline stream, and closed-candle handling. Because candles close in real time, the paper trading test waits for three one-minute candles and takes about four minutes. Set `PLAYWRIGHT_BASE_URL` to test against a running server; records created by the tests will then remain in that server's database.
 
 To test the real Binance connection and backtests with real market data separately:
 

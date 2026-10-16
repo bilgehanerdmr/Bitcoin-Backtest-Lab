@@ -1,43 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createServer } from 'node:http';
-import { createHash } from 'node:crypto';
-import type { Socket } from 'node:net';
+import { acceptStreams } from './support/stream-server';
 import { createBinanceFeed, type CandleFeed } from '../server/paper-feed';
 
-// Just enough of RFC 6455 to stand in for Binance: the upgrade handshake and unmasked text
-// frames. The client is Node's real WebSocket, which the feed uses in production.
 function streamServer() {
-  const clients = new Set<Socket>(),
-    paths: string[] = [],
-    server = createServer();
-  server.on('upgrade', (req, socket: Socket) => {
-    paths.push(req.url!);
-    const accept = createHash('sha1')
-      .update(req.headers['sec-websocket-key'] + '258EAFA5-E914-47DA-95CA-C5AB0DC85B11')
-      .digest('base64');
-    socket.write(
-      `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`,
-    );
-    socket.on('error', () => {});
-    socket.on('close', () => clients.delete(socket));
-    clients.add(socket);
-  });
-  return {
-    server,
-    paths,
-    clients,
-    send(text: string) {
-      const data = Buffer.from(text),
-        header =
-          data.length < 126
-            ? Buffer.from([0x81, data.length])
-            : Buffer.from([0x81, 126, data.length >> 8, data.length & 255]);
-      for (const c of clients) c.write(Buffer.concat([header, data]));
-    },
-    drop() {
-      for (const c of clients) c.destroy();
-    },
-  };
+  const server = createServer();
+  return { server, ...acceptStreams(server) };
 }
 // A combined-stream kline message with every field Binance sends.
 const kline = (closed: boolean) =>

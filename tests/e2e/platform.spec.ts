@@ -1,12 +1,9 @@
 import { test, expect } from '@playwright/test';
 import type { Result } from '../../shared/types';
-test('one-minute demo chart, backtest, saved report and mobile timeframe controls', async ({
-  page,
-}) => {
+test('one-minute chart, backtest, saved report and mobile timeframe controls', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
-  await page.getByRole('button', { name: 'Demo', exact: true }).click();
   await page.getByRole('button', { name: '1m', exact: true }).click();
   await expect(page.locator('.price-chart canvas').first()).toBeVisible();
   await expect(page.locator('.market-metrics')).not.toContainText(/NaN|Infinity/);
@@ -41,16 +38,15 @@ test('one-minute demo chart, backtest, saved report and mobile timeframe control
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   expect(errors).toEqual([]);
 });
-test('demo strategy, persisted report, export, templates, comparisons and mobile layout', async ({
+test('strategy backtest, persisted report, export, templates, comparisons and mobile layout', async ({
   page,
 }) => {
   const templateName = 'E2E Trend Şablonu ' + Date.now();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
-  await page.getByRole('button', { name: 'Demo', exact: true }).click();
   await expect(page.locator('.price-chart canvas').first()).toBeVisible();
-  await expect(page.getByText('Demo çalışma alanı.')).toBeVisible();
+  await expect(page.locator('.connection')).toContainText('CANLI BAĞLANTI');
   await page.screenshot({ path: 'test-results/dashboard-desktop.png', fullPage: true });
   await page.getByRole('button', { name: 'Backtest Başlat', exact: true }).click();
   await expect(page.locator('.performance-metrics')).toBeVisible({ timeout: 30000 });
@@ -99,7 +95,6 @@ test('demo strategy, persisted report, export, templates, comparisons and mobile
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole('button', { name: 'Menüyü aç' }).click();
   await page.locator('nav').getByRole('button', { name: 'Genel Bakış', exact: true }).click();
-  await page.getByRole('button', { name: 'Demo', exact: true }).click();
   await expect(page.locator('.price-chart canvas').first()).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: 'test-results/dashboard-mobile.png', fullPage: true });
@@ -107,7 +102,6 @@ test('demo strategy, persisted report, export, templates, comparisons and mobile
 });
 test('invalid strategy configuration prevents execution', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: 'Demo', exact: true }).click();
   await page.getByLabel('Hızlı ortalama').fill('30');
   await page.getByLabel('Yavaş ortalama').fill('10');
   await page.getByRole('button', { name: 'Backtest Başlat', exact: true }).click();
@@ -122,7 +116,7 @@ test('connection failure stays explicit and retry clears stale errors', async ({
     low: 99 + i,
     volume: 10,
   }));
-  await page.routeWebSocket(/data-stream\.binance\.vision/, (ws) => ws.close());
+  await page.routeWebSocket(/\/stream\?streams=/, (ws) => ws.close());
   await page.route('**/api/ticker?*', (route) =>
     route.fulfill({ status: 400, json: { error: 'Test: veri bağlantısı kesildi.' } }),
   );
@@ -131,7 +125,7 @@ test('connection failure stays explicit and retry clears stale errors', async ({
   );
   await page.goto('/');
   await expect(page.getByText('Test: veri bağlantısı kesildi.')).toBeVisible();
-  await expect(page.getByText('Demo çalışma alanı.')).not.toBeVisible();
+  await expect(page.getByRole('button', { name: 'Kendi verini yükle' })).toBeVisible();
   await page.unroute('**/api/ticker?*');
   await page.unroute('**/api/candles?*');
   await page.route('**/api/ticker?*', (route) =>

@@ -20,7 +20,7 @@ test('selected reports can be deleted and restored from a portable local backup'
         strategy: 'custom',
         custom,
         interval: '1h',
-        mode: 'demo',
+        mode: 'live',
         start: day,
         end: day,
       },
@@ -31,7 +31,6 @@ test('selected reports can be deleted and restored from a portable local backup'
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
-  await page.getByRole('button', { name: 'Demo', exact: true }).click();
   await page.locator('nav').getByRole('button', { name: 'Veri Merkezi', exact: true }).click();
   const downloaded = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Tüm verileri dışa aktar' }).click();
@@ -115,7 +114,6 @@ test('local database stays usable when browser localStorage is unavailable', asy
     }),
   );
   await page.goto('/');
-  await page.getByRole('button', { name: 'Demo', exact: true }).click();
   await page.locator('nav').getByRole('button', { name: 'Veri Merkezi', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Tüm verileri dışa aktar' })).toBeEnabled();
   await expect(page.getByText('Browser storage unavailable', { exact: true })).not.toBeVisible();

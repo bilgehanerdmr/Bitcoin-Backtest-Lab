@@ -23,20 +23,18 @@ import {
   paperStatusLabels,
   utcDate,
   validatePaperStart,
-  type DemoSpeed,
   type FeedStatus,
   type PaperDetail,
   type PaperMetrics,
   type PaperView,
 } from '../../shared/paper';
-import { strategyLabel, type Config, type Mode } from '../../shared/types';
+import { strategyLabel, type Config } from '../../shared/types';
 import './paper.css';
 
 const feedLabels: Record<FeedStatus, string> = {
   connecting: 'Bağlanıyor',
   live: 'Canlı akış',
   reconnecting: 'Yeniden bağlanıyor',
-  demo: 'Demo akışı',
 };
 const signalLabels = { buy: 'AL', sell: 'SAT', hold: 'BEKLE' };
 // Label, value, display format and the unit of the backtest − live difference.
@@ -54,14 +52,12 @@ const delta = (n: number, unit: string) =>
 export function PaperTrading({
   fields,
   config,
-  mode,
   onOpenReport,
   onToast,
   onReportsChanged,
 }: {
   fields: ReactNode;
   config: Config;
-  mode: Mode;
   onOpenReport: (id: string) => void;
   onToast: (message: string) => void;
   onReportsChanged: () => void;
@@ -70,7 +66,6 @@ export function PaperTrading({
     [selected, setSelected] = useState<string | null>(null),
     [detail, setDetail] = useState<PaperDetail | null>(null),
     [warmup, setWarmup] = useState(DEFAULT_WARMUP),
-    [speed, setSpeed] = useState<DemoSpeed>('fast'),
     [busy, setBusy] = useState(''),
     [error, setError] = useState(''),
     [tab, setTab] = useState<'equity' | 'trades' | 'logs'>('equity'),
@@ -132,9 +127,8 @@ export function PaperTrading({
     const today = utcDate(Date.now() / 1000),
       request = {
         // Paper trading always runs on Binance, whatever the terminal's data source is.
-        config: { ...config, dataset: undefined, mode, start: today, end: today },
+        config: { ...config, dataset: undefined, mode: 'live' as const, start: today, end: today },
         warmup,
-        ...(mode === 'demo' ? { demoSpeed: speed } : {}),
       };
     try {
       validatePaperStart(request);
@@ -207,15 +201,6 @@ export function PaperTrading({
                 <span>mum</span>
               </div>
             </label>
-            {mode === 'demo' && (
-              <label className="field">
-                <span>Demo akış hızı</span>
-                <select value={speed} onChange={(e) => setSpeed(e.target.value as DemoSpeed)}>
-                  <option value="fast">Hızlı · 1 mum / sn</option>
-                  <option value="realtime">Gerçek zaman</option>
-                </select>
-              </label>
-            )}
           </div>
           <p className="paper-hint">
             Göstergeler başlatmadan önceki {warmup.toLocaleString('tr-TR')} mumla ısınır (en az{' '}
@@ -403,9 +388,7 @@ export function PaperTrading({
                 value={current.feed ? feedLabels[current.feed] : 'Durdu'}
                 sub={
                   current.config.mode === 'demo'
-                    ? current.demoSpeed === 'fast'
-                      ? 'Sentetik · 1 mum / sn'
-                      : 'Sentetik · gerçek zaman'
+                    ? 'Eski demo oturumu · sentetik veri'
                     : 'Binance WebSocket + REST'
                 }
               />

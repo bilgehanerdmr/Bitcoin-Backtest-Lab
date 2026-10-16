@@ -8,7 +8,6 @@ test('custom candle rules can be edited, validated, saved, backtested and restor
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
-  await page.getByRole('button', { name: 'Demo', exact: true }).click();
   await page.getByRole('combobox', { name: 'Zaman dilimi', exact: true }).selectOption('1m');
   const day = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
   await page.getByLabel('Başlangıç · UTC').fill(day);
@@ -63,7 +62,6 @@ test('custom candle rules can be edited, validated, saved, backtested and restor
   await page.locator('tbody').getByRole('button', { name: 'Rapor' }).first().click();
   await expect(page.locator('.custom-strategy-summary')).toContainText('E2E Özel Mum Formasyonu');
   await page.reload();
-  await page.getByRole('button', { name: 'Demo', exact: true }).click();
   await page.locator('nav').getByRole('button', { name: 'Stratejiler', exact: true }).click();
   await page
     .locator('.strategy-card')
@@ -90,7 +88,7 @@ test('malformed custom strategies are rejected by the API', async ({ request }) 
   const custom = patternStrategy('engulfing');
   custom.entry.rules[0].left.offset = -1;
   const response = await request.post('/api/backtests', {
-    data: { ...defaultConfig, mode: 'demo', strategy: 'custom', custom },
+    data: { ...defaultConfig, mode: 'live', strategy: 'custom', custom },
   });
   expect(response.status()).toBe(400);
   expect((await response.json()).error).toContain('geriye bakış');

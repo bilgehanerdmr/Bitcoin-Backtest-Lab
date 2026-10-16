@@ -8,7 +8,6 @@ import {
   type Trade,
 } from '../shared/types';
 import { backtest, simulate, strategySignals, strategyWarmup } from '../shared/engine';
-import { demoCandles } from '../shared/demo';
 import {
   MAX_ACTIVE_SESSIONS,
   PAPER_MAX_CANDLES,
@@ -95,36 +94,15 @@ export function createPaperManager(options: PaperManagerOptions = {}) {
   }
   const active = () => store.listSessions().filter((s) => s.status !== 'stopped');
   function syncFeed() {
-    feed?.watch(
-      active().flatMap((s) =>
-        s.config.mode === 'live'
-          ? [{ symbol: symbolOf(s.config), interval: s.config.interval }]
-          : [],
-      ),
-    );
+    feed?.watch(active().map((s) => ({ symbol: symbolOf(s.config), interval: s.config.interval })));
   }
   // Open time of the newest candle that has closed for this session.
   function closedUntil(s: PaperSession, settle = 0): number {
-    const step = intervals[s.config.interval],
-      now = s.clock
-        ? s.clock.simAt + Math.floor((Date.now() - s.clock.realAt) / 1000) * step
-        : Date.now() / 1000 - settle;
-    return Math.floor(now / step) * step - step;
-  }
-  // The fast demo clock stands still while the session cannot run.
-  function pauseClock(s: PaperSession) {
-    if (s.clock)
-      s.clock = {
-        simAt:
-          (s.lastProcessed ?? s.tradeFrom - intervals[s.config.interval]) +
-          intervals[s.config.interval],
-        realAt: Date.now(),
-      };
+    const step = intervals[s.config.interval];
+    return Math.floor((Date.now() / 1000 - settle) / step) * step - step;
   }
   function load(s: PaperSession, end: number): Promise<Candle[]> {
-    return s.config.mode === 'demo'
-      ? Promise.resolve(demoCandles(s.config.interval, s.warmupStart, end))
-      : getCandles(symbolOf(s.config), s.config.interval, s.warmupStart, end);
+    return getCandles(symbolOf(s.config), s.config.interval, s.warmupStart, end);
   }
   // A session ends where a backtest of it would stop being valid: maxCandles in one
   // simulation, and whole report days within 50,000 candles.
@@ -209,7 +187,7 @@ export function createPaperManager(options: PaperManagerOptions = {}) {
     const s = store.readSession(id);
     if (!s || s.status === 'stopped' || s.status === 'error' || s.lastProcessed === null) return;
     const step = intervals[s.config.interval];
-    let end = s.config.mode === 'live' ? Math.min(upTo, closedUntil(s)) : upTo;
+    let end = Math.min(upTo, closedUntil(s));
     while (end > s.lastProcessed && !fits(s, end)) end -= step;
     if (end > s.lastProcessed) {
       let candles: Candle[];
@@ -231,7 +209,6 @@ export function createPaperManager(options: PaperManagerOptions = {}) {
         const failed = store.readSession(id)!;
         failed.status = 'error';
         failed.message = `${stamp(end)} UTC mumu işlenemedi. ${errorText(e)}`;
-        pauseClock(failed);
         store.saveSession(failed);
         return;
       }
@@ -292,12 +269,7 @@ export function createPaperManager(options: PaperManagerOptions = {}) {
   function view(s: PaperSession): PaperView {
     return {
       ...s,
-      feed:
-        s.status === 'stopped'
-          ? null
-          : s.config.mode === 'demo'
-            ? 'demo'
-            : (feed?.status() ?? 'connecting'),
+      feed: s.status === 'stopped' ? null : (feed?.status() ?? 'connecting'),
       tradeCount: store.countTrades(s.id),
     };
   }
@@ -306,7 +278,7 @@ export function createPaperManager(options: PaperManagerOptions = {}) {
       jobs: Promise<void>[] = [];
     for (const s of active()) {
       if (s.status === 'error' || pending.get(s.id) || (retryAt.get(s.id) ?? 0) > now) continue;
-      const end = closedUntil(s, s.config.mode === 'live' ? SETTLE : 0);
+      const end = closedUntil(s, SETTLE);
       jobs.push(serial(s.id, () => advance(s.id, end)));
     }
     return Promise.all(jobs).then(() => {});
@@ -320,12 +292,7 @@ export function createPaperManager(options: PaperManagerOptions = {}) {
     }
     return Promise.all(
       active()
-        .filter(
-          (s) =>
-            s.config.mode === 'live' &&
-            symbolOf(s.config) === symbol &&
-            s.config.interval === interval,
-        )
+        .filter((s) => symbolOf(s.config) === symbol && s.config.interval === interval)
         .map((s) => serial(s.id, () => advance(s.id, candle.time))),
     ).then(() => {});
   }
@@ -342,14 +309,13 @@ export function createPaperManager(options: PaperManagerOptions = {}) {
       );
     const config = structuredClone(request.config),
       step = intervals[config.interval],
-      tradeFrom = Math.ceil(now / step) * step,
-      demo = config.mode === 'demo';
+      tradeFrom = Math.ceil(now / step) * step;
     const s: PaperSession = {
       id: randomUUID(),
       createdAt: new Date().toISOString(),
       config,
       warmup: request.warmup,
-      demoSpeed: demo ? request.demoSpeed! : null,
+      demoSpeed: null,
       status: 'running',
       message: '',
       warmupStart: tradeFrom - request.warmup * step,
@@ -366,13 +332,13 @@ export function createPaperManager(options: PaperManagerOptions = {}) {
       stopReason: null,
       reportId: null,
       comparison: null,
-      clock: demo && request.demoSpeed === 'fast' ? { simAt: tradeFrom, realAt: Date.now() } : null,
+      clock: null,
     };
     starting++;
     try {
       // History is loaded and the strategy run over it before the session is stored, so an
       // unreachable data source or a broken strategy is reported to the user right away.
-      const end = closedUntil(s, config.mode === 'live' ? SETTLE : 0);
+      const end = closedUntil(s, SETTLE);
       await process(s, await load(s, end), end);
     } finally {
       starting--;
@@ -401,10 +367,9 @@ export function createPaperManager(options: PaperManagerOptions = {}) {
         if (s.status === 'stopped') throw new Error('Durdurulmuş oturum yeniden başlatılamaz.');
         s.status = 'running';
         s.message = '';
-        pauseClock(s);
         retryAt.delete(id);
         store.saveSession(s);
-        await advance(id, closedUntil(s, s.config.mode === 'live' ? SETTLE : 0));
+        await advance(id, closedUntil(s, SETTLE));
         return view(find(id));
       });
     },
@@ -431,12 +396,18 @@ export function createPaperManager(options: PaperManagerOptions = {}) {
         return view(s);
       });
     },
-    // After a restart: fast demo clocks resume where they paused, and the next tick fetches
-    // every candle that closed while the server was down.
+    // After a restart the next tick fetches every candle that closed while the server was
+    // down. Sessions left running in the removed demo mode cannot continue; they stop, and
+    // what they recorded stays viewable.
     resume(): Promise<void> {
       for (const s of active())
-        if (s.clock) {
-          pauseClock(s);
+        if (s.config.mode === 'demo') {
+          s.status = 'stopped';
+          s.stoppedAt = new Date().toISOString();
+          s.stopReason =
+            'Demo modu kaldırıldığı için oturum durduruldu. Kaydedilen sonuçlar görüntülenebilir.';
+          s.message = '';
+          s.clock = null;
           store.saveSession(s);
         }
       syncFeed();

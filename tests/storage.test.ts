@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { backtest } from '../shared/engine';
-import { demoCandles } from '../shared/demo';
+import { syntheticCandles } from './support/synthetic';
 import { defaultConfig } from '../shared/types';
 import { patternStrategy } from '../shared/candle-rules';
 import { validateBackup, type Backup } from '../shared/backup';
@@ -19,7 +19,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 function fixture(): Backup {
-  const candles = demoCandles('1m', 1704067200, 1704067200 + 99 * 60),
+  const candles = syntheticCandles('1m', 1704067200, 1704067200 + 99 * 60),
     config = {
       ...defaultConfig,
       strategy: 'custom' as const,

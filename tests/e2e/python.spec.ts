@@ -15,7 +15,6 @@ test('uploads, edits, stores, backtests and restores a Python strategy', async (
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
-  await page.getByRole('button', { name: 'Demo', exact: true }).click();
   await page.getByRole('combobox', { name: 'Zaman dilimi', exact: true }).selectOption('1m');
   const day = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
   await page.getByLabel('Başlangıç · UTC').fill(day);

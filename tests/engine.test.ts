@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { backtest, rsi, sma, validateConfig, validateLiveRange } from '../shared/engine';
-import { demoCandles } from '../shared/demo';
+import { syntheticCandles } from './support/synthetic';
 import { defaultConfig, intervals, type Candle, type Config } from '../shared/types';
 const config: Config = {
   ...defaultConfig,
@@ -97,7 +97,7 @@ describe('Backtest execution', () => {
   it.each(['sma', 'rsi', 'breakout'] as const)(
     'reconciles %s trades over a longer dataset',
     (strategy) => {
-      const data = demoCandles('1h', 1704067200, 1704067200 + 1200 * 3600);
+      const data = syntheticCandles('1h', 1704067200, 1704067200 + 1200 * 3600);
       const result = backtest(data, { ...defaultConfig, strategy, mode: 'demo' });
       expect(result.trades.length).toBeGreaterThan(0);
       expect(result.metrics.netProfit).toBeCloseTo(
@@ -158,9 +158,9 @@ describe('Data and configuration guards', () => {
     expect(() => validateConfig({ ...config, start: '2025-02-30', end: '2025-03-05' })).toThrow(
       /tarih/,
     ));
-  it('generates deterministic positive demo OHLC', () => {
-    const a = demoCandles('1h', 1704067200, 1704067200 + 99 * 3600);
-    expect(a).toEqual(demoCandles('1h', 1704067200, 1704067200 + 99 * 3600));
+  it('generates deterministic, valid synthetic test candles', () => {
+    const a = syntheticCandles('1h', 1704067200, 1704067200 + 99 * 3600);
+    expect(a).toEqual(syntheticCandles('1h', 1704067200, 1704067200 + 99 * 3600));
     expect(a).toHaveLength(100);
     expect(
       a.every(

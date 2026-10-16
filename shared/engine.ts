@@ -69,6 +69,13 @@ export function validateConfig(c: Config) {
     );
   if (start > Date.now()) throw new Error('Başlangıç tarihi gelecekte olamaz.');
 }
+// Saved presets and reports may still say 'demo'; new tests run on Binance or uploaded data.
+export function validateDataSource(c: Config) {
+  if (c.mode === 'demo')
+    throw new Error(
+      'Demo modu kaldırıldı. Binance verisini veya Veri Merkezi’nden yüklediğiniz bir veri setini kullanın.',
+    );
+}
 // Kept out of validateConfig so stored presets and reports stay loadable. Only the BTCUSDT
 // listing date is known locally; other pairs rely on Binance proving the missing range.
 export function validateLiveRange(c: Config) {

@@ -37,6 +37,8 @@ if (legacy.length) {
 }
 for (const table of ['candles', 'candle_gaps'] as const)
   if (!columns(table).length) db.exec(schema[table]);
+// Overridable so the browser tests can run against a local stand-in for Binance.
+const REST_URL = process.env.BINANCE_REST_URL ?? 'https://data-api.binance.vision/api/v3';
 let retryAfter = 0;
 // Every market-data request names its pair; `symbol` is part of `params`.
 export async function binance(path: string, params: Record<string, string>) {
@@ -47,14 +49,13 @@ export async function binance(path: string, params: Record<string, string>) {
     );
   let response: Response;
   try {
-    response = await fetch(
-      `https://data-api.binance.vision/api/v3/${path}?${new URLSearchParams(params)}`,
-      { signal: AbortSignal.timeout(12000) },
-    );
+    response = await fetch(`${REST_URL}/${path}?${new URLSearchParams(params)}`, {
+      signal: AbortSignal.timeout(12000),
+    });
   } catch {
     throw new HttpError(
       502,
-      'Binance bağlantısı kurulamadı. İnternet bağlantınızı kontrol edin veya demo moduna geçin.',
+      'Binance bağlantısı kurulamadı. İnternet bağlantınızı kontrol edin veya Veri Merkezi’nden kendi verinizi yükleyin.',
     );
   }
   if (response.status === 429 || response.status === 418) {

@@ -21,14 +21,13 @@ import {
   type Pattern,
   type RuleGroup,
 } from '../../shared/candle-rules';
-import { intervals, type Candle, type Interval, type Mode } from '../../shared/types';
+import { intervals, type Candle, type Interval } from '../../shared/types';
 import './custom-strategy.css';
 
 interface Props {
   value: CustomStrategy;
   candles: Candle[];
   interval: Interval;
-  mode: Mode;
   // Names the preview's data when it is not the Binance chart (an uploaded dataset).
   sourceLabel?: string;
   onApply: (value: CustomStrategy) => void;
@@ -38,7 +37,6 @@ export function CustomStrategyEditor({
   value,
   candles,
   interval,
-  mode,
   sourceLabel,
   onApply,
   onClose,
@@ -177,8 +175,8 @@ export function CustomStrategyEditor({
             <div>
               <strong>Grafikteki kapanmış mumlarda önizleme</strong>
               <span>
-                {interval} · {sourceLabel ?? (mode === 'demo' ? 'Sentetik demo' : 'Binance Spot')} ·{' '}
-                {preview?.count ?? 0} değerlendirilebilir mum
+                {interval} · {sourceLabel ?? 'Binance Spot'} · {preview?.count ?? 0}{' '}
+                değerlendirilebilir mum
               </span>
             </div>
             <div className="preview-counts">

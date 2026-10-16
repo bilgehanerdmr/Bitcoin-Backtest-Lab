@@ -16,7 +16,7 @@ npm test
 npm run dev
 ```
 
-Open http://127.0.0.1:5173. Use the explicitly labelled synthetic demo to explore the workbench without downloading market data. The interface is in Turkish; the full operating guide is in [README.md](README.md).
+Open http://127.0.0.1:5173. Without access to Binance, upload your own OHLCV CSV in the Data Center to explore the workbench. The interface is in Turkish; the full operating guide is in [README.md](README.md).
 
 ## Where to review the engineering
 
@@ -58,13 +58,13 @@ The **Canlı Test** tab runs a built-in, custom candle, or Python strategy on li
 - Each session stores a copy of its strategy code and settings, plus its signals, trades, and equity in SQLite. After a restart, active sessions resume and process the candles they missed.
 - Stopping saves a report labelled “Canlı (paper)”. It applies the backtest's end-of-test rule, so it equals a backtest of the same candles. “Aynı dönemi backtest et” re-reads the candles, runs a fresh backtest (a single Python pass), shows both side by side, and saves it labelled “Karşılaştırma”.
 - Limits: three active sessions; 50,000 candles per session including warmup (about 34 days on 1m), after which the session stops itself and saves its report; at least three traded candles per report. Fills are simulated from OHLCV candles; order-book depth, latency, and partial fills are not modelled.
-- An offline, explicitly labelled demo stream (synthetic candles, real time or one candle per second) drives the browser tests.
+- The browser tests run offline against a local stand-in for Binance's REST and WebSocket market data (`tests/support/fake-binance.ts`), so they exercise the real Binance code paths.
 
 The parity tests in `tests/paper.test.ts` feed candles one at a time and compare every intermediate state and the final report with a backtest of the same candles, for each built-in strategy, a custom candle strategy, Python, and a series containing Binance outages.
 
 ## Reproducible examples and sharing
 
-Synthetic demo data are deterministic and labelled separately from market data. Existing workspace backups may include personal reports and custom strategy code; they are not required for a reviewer to inspect the engine or run its unit tests. Python callbacks execute trusted local code and are not a multi-user sandbox. Backups include paper sessions; imported sessions arrive stopped, so importing never runs strategy code.
+An earlier synthetic demo mode has been removed; reports saved in it keep their DEMO label. Existing workspace backups may include personal reports and custom strategy code; they are not required for a reviewer to inspect the engine or run its unit tests. Python callbacks execute trusted local code and are not a multi-user sandbox. Backups include paper sessions; imported sessions arrive stopped, so importing never runs strategy code.
 
 A useful next experiment is a frozen chronological comparison of simple baselines, with data provenance, parameters, and result artifacts saved together. No predictive advantage is claimed by the existence of this workbench.
 

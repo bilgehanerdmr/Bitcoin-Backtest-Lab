@@ -30,7 +30,6 @@ import {
   Sparkles,
   TrendingUp,
   Trash2,
-  Wifi,
   WifiOff,
   X,
   Zap,
@@ -46,14 +45,13 @@ import {
   type Candle,
   type Config,
   type Interval,
-  type Mode,
   type Result,
   type Strategy,
 } from '../shared/types';
 import { api, date, download, money, pct } from './api';
 import { useMarket } from './useMarket';
 import { PriceChart, EquityChart } from './components/Chart';
-import { validateConfig, validateLiveRange } from '../shared/engine';
+import { validateConfig, validateDataSource, validateLiveRange } from '../shared/engine';
 import { patternStrategy, ruleText } from '../shared/candle-rules';
 import { CustomStrategyEditor } from './components/CustomStrategyEditor';
 import { PythonStrategyEditor } from './components/PythonStrategyEditor';
@@ -101,7 +99,6 @@ const descriptions: Record<Strategy, string> = {
 };
 function App() {
   const [page, setPage] = useState<Page>('dashboard'),
-    [mode, setMode] = useState<Mode>('live'),
     [interval, setInterval] = useState<Interval>('1h'),
     [config, setConfig] = useState<Config>(() => ({
       ...defaultConfig,
@@ -137,7 +134,7 @@ function App() {
     ),
     [presetName, setPresetName] = useState(''),
     [compare, setCompare] = useState<string[]>([]);
-  const market = useMarket(symbolOf(config), interval, mode),
+  const market = useMarket(symbolOf(config), interval),
     ticker = market.ticker,
     price = ticker ? +ticker.lastPrice : null,
     change = ticker ? +ticker.priceChangePercent : 0;
@@ -317,9 +314,10 @@ function App() {
   async function run() {
     if (running) return;
     setError('');
-    const actual = { ...config, mode };
+    const actual: Config = { ...config, mode: 'live' };
     try {
       validateConfig(actual);
+      validateDataSource(actual);
       validateLiveRange(actual);
     } catch (e) {
       setError((e as Error).message);
@@ -348,7 +346,6 @@ function App() {
       const data = await api<Result>('/backtests/' + id);
       setResult(data);
       setConfig(data.config);
-      setMode(data.config.mode);
       setPage('backtest');
       setTradePage(0);
       setToast('Kaydedilmiş rapor açıldı.');
@@ -363,9 +360,7 @@ function App() {
   }
   function exportCandles() {
     download(
-      upload
-        ? `${upload.name}-${upload.interval}.csv`
-        : `${symbolOf(config)}-${interval}-${mode}.csv`,
+      upload ? `${upload.name}-${upload.interval}.csv` : `${symbolOf(config)}-${interval}.csv`,
       [
         'time,open,high,low,close,volume',
         ...chartCandles.map((b) =>
@@ -378,15 +373,13 @@ function App() {
   }
   const last = chartCandles.at(-1),
     statusLabel =
-      mode === 'demo'
-        ? 'DEMO VERİSİ'
-        : market.status === 'live'
-          ? 'CANLI BAĞLANTI'
-          : market.status === 'polling'
-            ? 'REST · 30 SN'
-            : market.status === 'connecting'
-              ? 'BAĞLANIYOR'
-              : 'BAĞLANTI YOK';
+      market.status === 'live'
+        ? 'CANLI BAĞLANTI'
+        : market.status === 'polling'
+          ? 'REST · 30 SN'
+          : market.status === 'connecting'
+            ? 'BAĞLANIYOR'
+            : 'BAĞLANTI YOK';
   const numberField = (
     label: string,
     key: keyof Config,
@@ -506,7 +499,7 @@ function App() {
               min={
                 upload
                   ? utcDate(upload.start)
-                  : mode === 'live' && symbolOf(config) === 'BTCUSDT'
+                  : symbolOf(config) === 'BTCUSDT'
                     ? LIVE_DATA_START
                     : undefined
               }
@@ -816,11 +809,7 @@ function App() {
             <span
               className={
                 'connection ' +
-                (mode === 'demo'
-                  ? 'demo'
-                  : market.status === 'live' || market.status === 'polling'
-                    ? 'online'
-                    : '')
+                (market.status === 'live' || market.status === 'polling' ? 'online' : '')
               }
             >
               <i />
@@ -868,21 +857,6 @@ function App() {
                 </p>
               </div>
               <div className="heading-actions">
-                <div className="mode-switch">
-                  <button
-                    className={mode === 'live' ? 'active' : ''}
-                    onClick={() => setMode('live')}
-                  >
-                    <Wifi size={13} />
-                    Canlı
-                  </button>
-                  <button
-                    className={mode === 'demo' ? 'active demo' : ''}
-                    onClick={() => setMode('demo')}
-                  >
-                    Demo
-                  </button>
-                </div>
                 <button
                   className="secondary compact"
                   onClick={() => {
@@ -897,16 +871,7 @@ function App() {
               </div>
             </div>
           </div>
-          {mode === 'demo' && (
-            <div className="notice demo-notice">
-              <FlaskConical size={16} />
-              <span>
-                <strong>Demo çalışma alanı.</strong> Fiyatlar ve test verileri sentetiktir; gerçek
-                piyasa performansını temsil etmez.
-              </span>
-            </div>
-          )}
-          {(error || (market.error && mode === 'live')) && (
+          {(error || market.error) && (
             <div className="notice error-notice">
               <WifiOff size={16} />
               <span>{error || market.error}</span>
@@ -1001,11 +966,9 @@ function App() {
                       </span>
                     </div>
                     <div className="metric-sub">
-                      {mode === 'demo'
-                        ? 'Sentetik fiyat · Demo'
-                        : market.updated
-                          ? 'Son veri: ' + new Date(market.updated).toLocaleTimeString('tr-TR')
-                          : 'Canlı piyasa verisine bağlanılıyor'}
+                      {market.updated
+                        ? 'Son veri: ' + new Date(market.updated).toLocaleTimeString('tr-TR')
+                        : 'Canlı piyasa verisine bağlanılıyor'}
                     </div>
                   </div>
                   <Metric
@@ -1023,7 +986,7 @@ function App() {
                   <Metric
                     label="24s İşlem Hacmi"
                     value={ticker ? '$' + money(+ticker.quoteVolume / 1e9, 3) + 'B' : '—'}
-                    sub={mode === 'demo' ? 'Örnek hacim' : 'Binance · BTC/USDT'}
+                    sub="Binance · BTC/USDT"
                     icon={<BarChart3 size={15} />}
                   />
                 </div>
@@ -1079,9 +1042,7 @@ function App() {
                         <span className="muted chart-exchange">
                           {upload ? 'Yüklenen veri' : 'Binance'}
                         </span>
-                        <span className="tiny-badge">
-                          {upload ? 'VERİ SETİ' : mode === 'demo' ? 'DEMO' : 'SPOT'}
-                        </span>
+                        <span className="tiny-badge">{upload ? 'VERİ SETİ' : 'SPOT'}</span>
                       </div>
                       <div className="chart-actions">
                         <button
@@ -1159,7 +1120,7 @@ function App() {
                     </div>
                     {chartCandles.length ? (
                       <PriceChart
-                        key={upload ? upload.id : interval + mode}
+                        key={upload ? upload.id : interval}
                         candles={chartCandles}
                         indicators={indicators}
                         fast={config.fast}
@@ -1180,10 +1141,10 @@ function App() {
                         <p>
                           Canlı verileri görmek için bağlantıyı kontrol edin
                           <br />
-                          veya çalışma alanını demo modunda keşfedin.
+                          veya kendi verinizi yükleyip onunla backtest yapın.
                         </p>
-                        <button className="secondary" onClick={() => setMode('demo')}>
-                          Demo verilerini keşfet <ArrowRight size={14} />
+                        <button className="secondary" onClick={() => go('data')}>
+                          Kendi verini yükle <ArrowRight size={14} />
                         </button>
                       </div>
                     )}
@@ -1234,7 +1195,6 @@ function App() {
             <PaperTrading
               fields={strategyFields(false)}
               config={config}
-              mode={mode}
               onOpenReport={openResult}
               onToast={setToast}
               onReportsChanged={refreshLists}
@@ -1593,13 +1553,7 @@ function App() {
                     <span>Kimlik doğrulama</span>
                     <b>API anahtarı gerekmez</b>
                   </div>
-                  <button
-                    className="secondary"
-                    onClick={() => {
-                      setMode('live');
-                      market.retry();
-                    }}
-                  >
+                  <button className="secondary" onClick={() => market.retry()}>
                     Bağlantıyı yenile <RefreshCw size={14} />
                   </button>
                 </section>
@@ -1623,11 +1577,7 @@ function App() {
                   >
                     <Download size={15} /> Mevcut {interval} grafiğini CSV indir
                   </button>
-                  <small className="muted">
-                    {mode === 'demo'
-                      ? 'Dışa aktarım kaynağı: sentetik demo'
-                      : 'Dışa aktarım kaynağı: Binance Spot'}
-                  </small>
+                  <small className="muted">Dışa aktarım kaynağı: Binance Spot</small>
                 </section>
               </div>
               <section className="panel">
@@ -1849,7 +1799,7 @@ function App() {
           ready={workspaceReady && !workspaceSaving}
           onClose={() => setPythonEditor(false)}
           onApply={async (python) => {
-            const next: Config = { ...config, mode, strategy: 'python', python };
+            const next: Config = { ...config, mode: 'live', strategy: 'python', python };
             const exists = presets.some(
               (p) =>
                 p.config.strategy === 'python' &&
@@ -1873,7 +1823,6 @@ function App() {
           candles={chartCandles}
           interval={upload ? upload.interval : interval}
           sourceLabel={upload ? 'Yüklenen veri · ' + upload.name : undefined}
-          mode={mode}
           onClose={() => setCustomEditor(false)}
           onApply={(custom) => {
             setConfig((c) => ({ ...c, strategy: 'custom', custom }));
@@ -2010,7 +1959,7 @@ function App() {
                     disabled={!workspaceReady || workspaceSaving}
                     onClick={async () => {
                       try {
-                        validateConfig({ ...config, mode });
+                        validateConfig({ ...config, mode: 'live' });
                         await saveWorkspace({
                           presets,
                           defaults: {
@@ -2055,10 +2004,10 @@ function App() {
                     disabled={!presetName.trim() || !workspaceReady || workspaceSaving}
                     onClick={async () => {
                       try {
-                        validateConfig({ ...config, mode });
+                        validateConfig({ ...config, mode: 'live' });
                         const next = [
                           ...presets,
-                          { name: presetName.trim(), config: { ...config, mode } },
+                          { name: presetName.trim(), config: { ...config, mode: 'live' as const } },
                         ];
                         await saveWorkspace({ presets: next, defaults: preferences });
                         setModal(null);

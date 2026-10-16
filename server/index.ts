@@ -2,8 +2,7 @@ import express from 'express';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { binance, db, getCandles } from './market';
-import { backtest, validateConfig, validateLiveRange } from '../shared/engine';
-import { demoCandles } from '../shared/demo';
+import { backtest, validateConfig, validateDataSource, validateLiveRange } from '../shared/engine';
 import {
   DEFAULT_SYMBOL,
   intervals,
@@ -193,6 +192,7 @@ app.post('/api/backtests', async (req, res, next) => {
   try {
     const config = req.body as Config;
     validateConfig(config);
+    validateDataSource(config);
     validateLiveRange(config);
     const start = Date.parse(config.start + 'T00:00:00Z') / 1000,
       end = Math.min(
@@ -211,9 +211,7 @@ app.post('/api/backtests', async (req, res, next) => {
       );
     const candles = upload
       ? uploadCandles(upload.id, start, end)
-      : config.mode === 'demo'
-        ? demoCandles(config.interval, start, end)
-        : await getCandles(symbolOf(config), config.interval, start, end);
+      : await getCandles(symbolOf(config), config.interval, start, end);
     if (upload && !candles.length)
       throw new Error(
         'Veri setinde bu tarih aralığında mum yok. Tarihleri veri setinin aralığına göre seçin.',

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
-import { demoCandles } from '../shared/demo';
-import { intervals, type Candle, type Interval, type Mode } from '../shared/types';
+import type { Candle, Interval } from '../shared/types';
+// Overridable so the browser tests can run against a local stand-in for Binance.
+const STREAM_URL = import.meta.env.VITE_BINANCE_STREAM_URL ?? 'wss://data-stream.binance.vision';
 type Ticker = {
   lastPrice: string;
   priceChangePercent: string;
@@ -10,7 +11,7 @@ type Ticker = {
   quoteVolume: string;
   volume: string;
 };
-export function useMarket(symbol: string, interval: Interval, mode: Mode) {
+export function useMarket(symbol: string, interval: Interval) {
   const [candles, setCandles] = useState<Candle[]>([]),
     [ticker, setTicker] = useState<Ticker | null>(null),
     [status, setStatus] = useState('connecting'),
@@ -30,30 +31,7 @@ export function useMarket(symbol: string, interval: Interval, mode: Mode) {
     setError('');
     setHistoryError('');
     setUpdated(null);
-    setStatus(mode === 'demo' ? 'demo' : 'connecting');
-    if (mode === 'demo') {
-      const end =
-          Math.floor(Date.now() / 1000 / intervals[interval]) * intervals[interval] -
-          intervals[interval],
-        dayBars = 86400 / intervals[interval],
-        // One-minute charts need a full day plus its previous close for 24h statistics.
-        count = Math.max(500, dayBars + 1),
-        data = demoCandles(interval, end - (count - 1) * intervals[interval], end);
-      setCandles(data.slice(-500));
-      const last = data.at(-1)!,
-        day = data.slice(-dayBars);
-      setTicker({
-        lastPrice: String(last.close),
-        priceChangePercent: String((last.close / data.at(-dayBars - 1)!.close - 1) * 100),
-        highPrice: String(Math.max(...day.map((b) => b.high))),
-        lowPrice: String(Math.min(...day.map((b) => b.low))),
-        quoteVolume: String(day.reduce((s, b) => s + b.volume * b.close, 0)),
-        volume: '0',
-      });
-      return () => {
-        active = false;
-      };
-    }
+    setStatus('connecting');
     const refresh = async () => {
       try {
         const tick = await api<Ticker>('/ticker?symbol=' + symbol);
@@ -98,7 +76,7 @@ export function useMarket(symbol: string, interval: Interval, mode: Mode) {
     function connect() {
       if (!active) return;
       socket = new WebSocket(
-        `wss://data-stream.binance.vision/stream?streams=${symbol.toLowerCase()}@ticker/${symbol.toLowerCase()}@kline_${interval}`,
+        `${STREAM_URL}/stream?streams=${symbol.toLowerCase()}@ticker/${symbol.toLowerCase()}@kline_${interval}`,
       );
       socket.onmessage = (e) => {
         if (!active) return;
@@ -162,7 +140,7 @@ export function useMarket(symbol: string, interval: Interval, mode: Mode) {
     };
     // `retry` is a counter whose only job is to restart the connection.
     // oxlint-disable-next-line react/exhaustive-effect-dependencies
-  }, [symbol, interval, mode, retry]);
+  }, [symbol, interval, retry]);
   return {
     candles,
     ticker,

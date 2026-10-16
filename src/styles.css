@@ -383,12 +383,6 @@ nav button.active:before {
   background: #65c8a6;
   box-shadow: 0 0 0 3px #65c8a612;
 }
-.connection.demo {
-  color: var(--gold);
-}
-.connection.demo i {
-  background: var(--gold);
-}
 .topbar-divider {
   height: 17px;
   width: 1px;
@@ -459,29 +453,6 @@ h1 {
   gap: 12px;
   flex-shrink: 0;
 }
-.mode-switch {
-  display: flex;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 3px;
-  background: #11151d;
-  height: 33px;
-}
-.mode-switch button {
-  font-size: 10px;
-  padding: 0 9px;
-  color: #7e8899;
-  gap: 5px;
-  border-radius: 3px;
-}
-.mode-switch button.active {
-  background: #26342f;
-  color: #8dd4b8;
-}
-.mode-switch button.active.demo {
-  background: #3a3020;
-  color: var(--gold);
-}
 .primary {
   background: var(--gold);
   color: #242018;
@@ -527,11 +498,6 @@ h1 {
 }
 .notice strong {
   font-weight: 550;
-}
-.demo-notice {
-  color: #ceb886;
-  background: #b38b350b;
-  border-color: #80663340;
 }
 .error-notice {
   color: #df9ca1;
@@ -1921,10 +1887,6 @@ td input[type='checkbox'] {
   .heading-actions {
     max-width: 105px;
   }
-  .mode-switch button {
-    padding: 0 6px;
-    font-size: 9px;
-  }
   .insight-strip {
     padding: 14px;
     gap: 10px;
@@ -2041,13 +2003,6 @@ td input[type='checkbox'] {
   }
   .heading-actions > .secondary {
     display: flex;
-  }
-  .mode-switch {
-    height: 34px;
-  }
-  .mode-switch button {
-    font-size: 10px;
-    padding: 0 12px;
   }
   .page-heading {
     margin-bottom: 20px;

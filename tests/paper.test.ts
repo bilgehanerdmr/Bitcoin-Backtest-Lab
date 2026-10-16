@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { backtest } from '../shared/engine';
-import { demoCandles } from '../shared/demo';
+import { syntheticCandles } from './support/synthetic';
 import { patternStrategy } from '../shared/candle-rules';
 import { validateBackup } from '../shared/backup';
 import { defaultConfig, type Candle, type Config, type Result } from '../shared/types';
@@ -16,7 +16,7 @@ import type { PaperManager, PaperManagerOptions } from '../server/paper';
 // under the fake clock.
 const STEP = 60,
   T0 = Math.floor(Date.now() / 86400000) * 86400 - 2 * 86400,
-  series = demoCandles('1m', T0, T0 + 299 * STEP),
+  series = syntheticCandles('1m', T0, T0 + 299 * STEP),
   at = (i: number) => T0 + i * STEP;
 const base: Config = {
   ...defaultConfig,
@@ -380,28 +380,28 @@ describe('Session lifecycle', () => {
     expect(live.lastProcessed).toBe(at(120));
     expect(report(live.reportId!).equity).toEqual(backtestOf(s, at(120), undefined, true).equity);
   });
-  it('runs a labelled fast demo stream offline, paused while the server is down', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(() => Promise.reject(new Error('Demo must not use the network'))),
-    );
+  it('rejects demo sessions and stops ones left running from before demo was removed', async () => {
     create();
-    vi.setSystemTime(at(1000) * 1000 + 300);
-    const s = await manager!.start({
-      config: { ...base, mode: 'demo', strategy: 'sma' },
-      warmup: 60,
+    await expect(start({ ...base, mode: 'demo', strategy: 'sma' })).rejects.toThrow(
+      /Demo modu kaldırıldı/,
+    );
+    const s = await start({ ...base, strategy: 'sma' });
+    for (const candle of series.slice(100, 106)) await close(candle);
+    // Mark it as a session an older version left running in fast demo mode.
+    const store = await import('../server/paper-store'),
+      saved = store.readSession(s.id)!;
+    store.saveSession({
+      ...saved,
+      config: { ...saved.config, mode: 'demo' },
       demoSpeed: 'fast',
+      clock: { simAt: at(106), realAt: Date.now() },
     });
-    expect(s).toMatchObject({ feed: 'demo', tradeFrom: at(1001), demoSpeed: 'fast' });
-    vi.setSystemTime(at(1000) * 1000 + 300 + 5000);
-    await manager!.tick();
-    const demo = demoCandles('1m', s.warmupStart, at(1005)),
-      live = manager!.detail(s.id);
-    expect(live.lastProcessed).toBe(at(1005));
-    expect(live.equity).toEqual(backtestOf(s, at(1005), undefined, false, demo).equity);
-    vi.setSystemTime(at(1000) * 1000 + 300 + 60000);
     await manager!.resume();
-    expect(manager!.detail(s.id).lastProcessed).toBe(at(1005));
+    const stopped = manager!.detail(s.id);
+    expect(stopped).toMatchObject({ status: 'stopped', feed: null, clock: null, reportId: null });
+    expect(stopped.stopReason).toMatch(/Demo modu kaldırıldığı/);
+    expect(stopped.lastProcessed).toBe(at(105));
+    expect(stopped.equity).toHaveLength(5);
   });
   it('saves a labelled comparison backtest that matches the live result', async () => {
     create();

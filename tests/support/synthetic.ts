@@ -1,6 +1,6 @@
-import { intervals, type Candle, type Interval } from './types';
-// Deterministic synthetic data, explicitly identified as demo everywhere.
-export function demoCandles(interval: Interval, start: number, end: number): Candle[] {
+import { intervals, type Candle, type Interval } from '../../shared/types';
+// Deterministic synthetic candles for tests: the same range always gives the same series.
+export function syntheticCandles(interval: Interval, start: number, end: number): Candle[] {
   const step = intervals[interval],
     out: Candle[] = [];
   let seed = 42;
