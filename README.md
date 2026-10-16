@@ -153,7 +153,7 @@ In demo mode, paper trading runs offline on deterministic synthetic candles and 
 - `src/`: React + TypeScript interface and charts.
 - `shared/engine.ts`: standalone calculation engine and validation.
 - `server/`: Express API, Binance client, and SQLite persistence.
-- `data/bitcoin-lab.sqlite`: automatically created database for real candle caching and reports. Demo candles are not stored in the real-data table; demo reports are saved with a source label.
+- `data/bitcoin-lab.sqlite`: automatically created database for real candle caching and reports. Cached candles and confirmed exchange gaps are stored per trading pair (Binance USDT spot pairs; BTCUSDT today). A database from a version before pair support is converted once on startup: all existing candles are filed under BTCUSDT in a single transaction, with nothing removed. Demo candles are not stored in the real-data table; demo reports are saved with a source label.
 - `DATABASE_PATH`: alternative SQLite file path. Its parent directory must already exist.
 - Templates and preferences are stored in the same SQLite file's `workspace` table. Legacy `localStorage` templates are merged into SQLite on first load; old keys are removed after a successful save.
 - `server/paper.ts`, `server/paper-feed.ts`, `server/paper-store.ts`: paper trading sessions, the Binance kline stream, and the `paper_*` SQLite tables. `shared/paper.ts` holds the session model and validation.
@@ -205,6 +205,8 @@ Python source code is included with templates and reports in **Data Center** (`V
 - On the other computer, copy this project's code and run `npm install` and `npm run dev`. Open the JSON file through **Data Center → Choose backup file** (`Veri Merkezi → Yedek dosyası seç`), review the content counts, and click **Start import** (`İçe aktarmayı başlat`).
 
 Imports write to the local SQLite database. Existing candles with the same timeframe and opening time, and existing reports with the same ID, are preserved. New records are added; templates with the same name and configuration are not duplicated. Defaults from the backup are applied. The entire file is validated first, then candles, reports, and workspace data are written in a single SQLite transaction; any error rolls back the whole import. Deleted reports can be restored by importing a backup created before deletion.
+
+Backups use format version 2, which records each candle's trading pair. Version 1 backups still open; their candles are filed under BTCUSDT. Older platform versions reject version 2 backups instead of filing other pairs' candles under BTCUSDT; update the application first.
 
 JSON backups are limited to **100 MB**, 1,000,000 candles, 10,000 reports, and 1,000 templates. CSV exports are for analysis and cannot be imported as backups. For larger stores, close the application and copy the entire `data/` directory to the other computer. Do not copy only the `.sqlite` file, especially while the application is running; the WAL file may contain records not yet written to the main database file.
 

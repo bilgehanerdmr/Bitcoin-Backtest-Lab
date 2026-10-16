@@ -110,7 +110,7 @@ async function start(config: Config, warmup = 60): Promise<PaperView> {
 // The WebSocket's closed-kline event, one second after the candle closes.
 async function close(candle: Candle) {
   vi.setSystemTime((candle.time + STEP + 1) * 1000);
-  await manager!.ingest('1m', candle);
+  await manager!.ingest('BTCUSDT', '1m', candle);
 }
 function backtestOf(
   s: PaperView,
@@ -336,6 +336,20 @@ describe('Session lifecycle', () => {
     expect(live.status).toBe('running');
     expect(live.config.python).toEqual(pythonStrategy);
     expect(live.equity).toEqual(backtestOf(s, at(109), await pythonSignals(s)).equity);
+  });
+  it('advances only the sessions of the pair a closed candle belongs to', async () => {
+    create();
+    const btc = await start({ ...base, strategy: 'sma' }),
+      eth = await start({ ...base, strategy: 'sma', symbol: 'ETHUSDT' }),
+      requested = (vi.mocked(fetch).mock.calls as [string][]).map(([url]) =>
+        new URL(url).searchParams.get('symbol'),
+      );
+    expect(new Set(requested)).toEqual(new Set(['BTCUSDT', 'ETHUSDT']));
+    vi.setSystemTime((series[100].time + STEP + 1) * 1000);
+    await manager!.ingest('ETHUSDT', '1m', series[100]);
+    expect(manager!.detail(eth.id).lastProcessed).toBe(at(100));
+    expect(manager!.detail(btc.id).lastProcessed).toBe(at(99));
+    expect(manager!.detail(eth.id).config.symbol).toBe('ETHUSDT');
   });
   it('runs at most three sessions at a time', async () => {
     create();

@@ -1,14 +1,45 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
-import { intervals, type Candle, type Interval } from '../shared/types';
+import { DEFAULT_SYMBOL, intervals, type Candle, type Interval } from '../shared/types';
 import { HttpError } from './errors';
 mkdirSync('data', { recursive: true });
 export const db = new DatabaseSync(process.env.DATABASE_PATH || 'data/bitcoin-lab.sqlite');
+const schema = {
+  candles:
+    'CREATE TABLE candles (symbol TEXT NOT NULL, interval TEXT NOT NULL, time INTEGER NOT NULL, open REAL, high REAL, low REAL, close REAL, volume REAL, PRIMARY KEY(symbol,interval,time))',
+  candle_gaps:
+    'CREATE TABLE candle_gaps (symbol TEXT NOT NULL, interval TEXT NOT NULL, time INTEGER NOT NULL, PRIMARY KEY(symbol,interval,time))',
+};
 db.exec(
-  'PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS candles (interval TEXT, time INTEGER, open REAL, high REAL, low REAL, close REAL, volume REAL, PRIMARY KEY(interval,time)); CREATE TABLE IF NOT EXISTS backtests (id TEXT PRIMARY KEY, created_at TEXT, payload TEXT); CREATE TABLE IF NOT EXISTS candle_gaps (interval TEXT, time INTEGER, PRIMARY KEY(interval,time));',
+  'PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS backtests (id TEXT PRIMARY KEY, created_at TEXT, payload TEXT);',
 );
+const columns = (table: string) =>
+  (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map((c) => c.name);
+// Before multi-coin support the cache held only BTCUSDT and was keyed by (interval, time).
+// Those rows move under BTCUSDT in one transaction; the symbol joins the primary key.
+const legacy = (['candles', 'candle_gaps'] as const).filter(
+  (t) => columns(t).length && !columns(t).includes('symbol'),
+);
+if (legacy.length) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const table of legacy) {
+      const rest = columns(table).join(',');
+      db.exec(
+        `ALTER TABLE ${table} RENAME TO ${table}_legacy; ${schema[table]}; INSERT INTO ${table} (symbol,${rest}) SELECT '${DEFAULT_SYMBOL}',${rest} FROM ${table}_legacy; DROP TABLE ${table}_legacy;`,
+      );
+    }
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+}
+for (const table of ['candles', 'candle_gaps'] as const)
+  if (!columns(table).length) db.exec(schema[table]);
 let retryAfter = 0;
-export async function binance(path: string, params: Record<string, string> = {}) {
+// Every market-data request names its pair; `symbol` is part of `params`.
+export async function binance(path: string, params: Record<string, string>) {
   if (Date.now() < retryAfter)
     throw new HttpError(
       503,
@@ -17,7 +48,7 @@ export async function binance(path: string, params: Record<string, string> = {})
   let response: Response;
   try {
     response = await fetch(
-      `https://data-api.binance.vision/api/v3/${path}?${new URLSearchParams({ symbol: 'BTCUSDT', ...params })}`,
+      `https://data-api.binance.vision/api/v3/${path}?${new URLSearchParams(params)}`,
       { signal: AbortSignal.timeout(12000) },
     );
   } catch {
@@ -40,7 +71,7 @@ export async function binance(path: string, params: Record<string, string> = {})
 }
 // A candle the WebSocket stream marked closed (`k.x`); REST serves the same row. Gaps
 // before it are still left for getCandles to confirm against REST.
-export function storeClosedCandle(interval: Interval, b: Candle) {
+export function storeClosedCandle(symbol: string, interval: Interval, b: Candle) {
   const step = intervals[interval];
   if (
     ![b.time, b.open, b.high, b.low, b.close, b.volume].every(Number.isFinite) ||
@@ -53,7 +84,8 @@ export function storeClosedCandle(interval: Interval, b: Candle) {
     b.low > Math.min(b.open, b.close)
   )
     throw new HttpError(502, 'Veri sağlayıcı geçersiz mum döndürdü.');
-  db.prepare('INSERT OR REPLACE INTO candles VALUES(?,?,?,?,?,?,?)').run(
+  db.prepare('INSERT OR REPLACE INTO candles VALUES(?,?,?,?,?,?,?,?)').run(
+    symbol,
     interval,
     b.time,
     b.open,
@@ -64,12 +96,22 @@ export function storeClosedCandle(interval: Interval, b: Candle) {
   );
 }
 let queue: Promise<unknown> = Promise.resolve();
-export function getCandles(interval: Interval, start: number, end: number): Promise<Candle[]> {
-  const job = queue.then(() => loadCandles(interval, start, end));
+export function getCandles(
+  symbol: string,
+  interval: Interval,
+  start: number,
+  end: number,
+): Promise<Candle[]> {
+  const job = queue.then(() => loadCandles(symbol, interval, start, end));
   queue = job.catch(() => {});
   return job;
 }
-async function loadCandles(interval: Interval, start: number, end: number): Promise<Candle[]> {
+async function loadCandles(
+  symbol: string,
+  interval: Interval,
+  start: number,
+  end: number,
+): Promise<Candle[]> {
   const step = intervals[interval];
   if (!step) throw new Error('Geçersiz zaman dilimi.');
   const from = Math.ceil(start / step) * step,
@@ -83,24 +125,26 @@ async function loadCandles(interval: Interval, start: number, end: number): Prom
   const read = () =>
     db
       .prepare(
-        'SELECT time,open,high,low,close,volume FROM candles WHERE interval=? AND time>=? AND time<=? ORDER BY time',
+        'SELECT time,open,high,low,close,volume FROM candles WHERE symbol=? AND interval=? AND time>=? AND time<=? ORDER BY time',
       )
-      .all(interval, from, to) as unknown as Candle[];
+      .all(symbol, interval, from, to) as unknown as Candle[];
   // Open times Binance never produced (exchange outages), cached so they are not refetched.
   const covered = (candles: Candle[]) =>
     new Set([
       ...candles.map((b) => b.time),
       ...(
         db
-          .prepare('SELECT time FROM candle_gaps WHERE interval=? AND time>=? AND time<=?')
-          .all(interval, from, to) as { time: number }[]
+          .prepare(
+            'SELECT time FROM candle_gaps WHERE symbol=? AND interval=? AND time>=? AND time<=?',
+          )
+          .all(symbol, interval, from, to) as { time: number }[]
       ).map((g) => g.time),
     ]);
   const existing = read();
   const known = covered(existing);
   if (known.size === count) return existing;
-  const insert = db.prepare('INSERT OR REPLACE INTO candles VALUES(?,?,?,?,?,?,?)'),
-    insertGap = db.prepare('INSERT OR IGNORE INTO candle_gaps VALUES(?,?)');
+  const insert = db.prepare('INSERT OR REPLACE INTO candles VALUES(?,?,?,?,?,?,?,?)'),
+    insertGap = db.prepare('INSERT OR IGNORE INTO candle_gaps VALUES(?,?,?)');
   let cursor = from;
   while (cursor <= to) {
     if (known.has(cursor)) {
@@ -110,6 +154,7 @@ async function loadCandles(interval: Interval, start: number, end: number): Prom
     // No endTime: a later candle, even one past `to`, is what proves a skipped open time
     // does not exist on Binance. Missing candles with nothing after them stay unproven.
     const rows = (await binance('klines', {
+      symbol,
       interval,
       startTime: String(cursor * 1000),
       limit: '1000',
@@ -123,7 +168,7 @@ async function loadCandles(interval: Interval, start: number, end: number): Prom
         if (!Number.isInteger(time) || time % step !== 0 || time < expected)
           throw new HttpError(502, 'Veri sağlayıcı geçersiz mum döndürdü.');
         for (; expected < Math.min(time, to + step); expected += step)
-          insertGap.run(interval, expected);
+          insertGap.run(symbol, interval, expected);
         expected = time + step;
         if (time >= from && time <= to) {
           const values = [
@@ -135,7 +180,7 @@ async function loadCandles(interval: Interval, start: number, end: number): Prom
           ];
           if (!values.every(Number.isFinite))
             throw new HttpError(502, 'Veri sağlayıcı geçersiz mum döndürdü.');
-          insert.run(interval, time, ...values);
+          insert.run(symbol, interval, time, ...values);
         }
       }
       db.exec('COMMIT');

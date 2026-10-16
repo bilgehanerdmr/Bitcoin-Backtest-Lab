@@ -1,5 +1,6 @@
 import {
   intervals,
+  SYMBOL_PATTERN,
   type Candle,
   type EquityPoint,
   type Interval,
@@ -11,6 +12,8 @@ import { validateWorkspace, type Workspace } from './workspace';
 import type { PaperSession, PaperSignal } from './paper';
 export const MAX_BACKUP_BYTES = 100 * 1024 * 1024;
 export interface StoredCandle extends Candle {
+  // Version 1 backups predate multi-coin support and hold only BTCUSDT without this field.
+  symbol?: string;
   interval: Interval;
 }
 export interface PaperSessionBackup {
@@ -21,7 +24,9 @@ export interface PaperSessionBackup {
 }
 export interface Backup {
   format: 'bitcoin-lab-backup';
-  version: 1;
+  // 2 records each candle's symbol. Older platform versions reject it rather than filing
+  // other coins' candles under BTCUSDT.
+  version: 1 | 2;
   exportedAt: string;
   candles: StoredCandle[];
   backtests: Result[];
@@ -188,7 +193,7 @@ function validatePaperSession(entry: PaperSessionBackup, ids: Set<string>) {
 }
 export function validateBackup(input: unknown): asserts input is Backup {
   const b = input as Backup;
-  if (!b || b.format !== 'bitcoin-lab-backup' || b.version !== 1)
+  if (!b || b.format !== 'bitcoin-lab-backup' || (b.version !== 1 && b.version !== 2))
     fail('desteklenmeyen dosya biçimi veya sürüm.');
   if (typeof b.exportedAt !== 'string' || !Number.isFinite(Date.parse(b.exportedAt)))
     fail('geçersiz oluşturulma tarihi.');
@@ -203,6 +208,8 @@ export function validateBackup(input: unknown): asserts input is Backup {
   for (const c of b.candles) {
     if (
       !c ||
+      (c.symbol !== undefined &&
+        (typeof c.symbol !== 'string' || !SYMBOL_PATTERN.test(c.symbol))) ||
       !Object.hasOwn(intervals, c.interval) ||
       ![c.time, c.open, c.high, c.low, c.close, c.volume].every(finite) ||
       !Number.isInteger(c.time) ||

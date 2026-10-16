@@ -1,6 +1,8 @@
 import {
   intervals,
   LIVE_DATA_START,
+  SYMBOL_PATTERN,
+  symbolOf,
   type Candle,
   type Config,
   type Interval,
@@ -19,6 +21,8 @@ export function validateConfig(c: Config) {
     !['live', 'demo'].includes(c.mode)
   )
     throw new Error('Geçersiz strateji, zaman dilimi veya veri modu.');
+  if (c.symbol !== undefined && (typeof c.symbol !== 'string' || !SYMBOL_PATTERN.test(c.symbol)))
+    throw new Error('Geçersiz işlem çifti: yalnızca Binance USDT spot çiftleri desteklenir.');
   const limits: Record<string, [number, number]> = {
     capital: [10, 1e9],
     allocation: [1, 100],
@@ -62,9 +66,10 @@ export function validateConfig(c: Config) {
     );
   if (start > Date.now()) throw new Error('Başlangıç tarihi gelecekte olamaz.');
 }
-// Kept out of validateConfig so stored presets and reports stay loadable.
+// Kept out of validateConfig so stored presets and reports stay loadable. Only the BTCUSDT
+// listing date is known locally; other pairs rely on Binance proving the missing range.
 export function validateLiveRange(c: Config) {
-  if (c.mode === 'live' && c.start < LIVE_DATA_START)
+  if (c.mode === 'live' && symbolOf(c) === 'BTCUSDT' && c.start < LIVE_DATA_START)
     throw new Error(
       `Binance BTC/USDT verileri ${LIVE_DATA_START} tarihinde başlar. Bu tarih veya sonrasını seçin.`,
     );

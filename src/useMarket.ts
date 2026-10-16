@@ -10,7 +10,7 @@ type Ticker = {
   quoteVolume: string;
   volume: string;
 };
-export function useMarket(interval: Interval, mode: Mode) {
+export function useMarket(symbol: string, interval: Interval, mode: Mode) {
   const [candles, setCandles] = useState<Candle[]>([]),
     [ticker, setTicker] = useState<Ticker | null>(null),
     [status, setStatus] = useState('connecting'),
@@ -56,7 +56,7 @@ export function useMarket(interval: Interval, mode: Mode) {
     }
     const refresh = async () => {
       try {
-        const tick = await api<Ticker>('/ticker');
+        const tick = await api<Ticker>('/ticker?symbol=' + symbol);
         if (active) {
           setTicker(tick);
           setUpdated(Date.now());
@@ -72,7 +72,9 @@ export function useMarket(interval: Interval, mode: Mode) {
     };
     const history = async () => {
       try {
-        const data = await api<{ candles: Candle[] }>('/candles?interval=' + interval);
+        const data = await api<{ candles: Candle[] }>(
+          `/candles?symbol=${symbol}&interval=${interval}`,
+        );
         if (active) {
           setHistoryError('');
           setCandles((old) => {
@@ -96,7 +98,7 @@ export function useMarket(interval: Interval, mode: Mode) {
     function connect() {
       if (!active) return;
       socket = new WebSocket(
-        `wss://data-stream.binance.vision/stream?streams=btcusdt@ticker/btcusdt@kline_${interval}`,
+        `wss://data-stream.binance.vision/stream?streams=${symbol.toLowerCase()}@ticker/${symbol.toLowerCase()}@kline_${interval}`,
       );
       socket.onmessage = (e) => {
         if (!active) return;
@@ -160,7 +162,7 @@ export function useMarket(interval: Interval, mode: Mode) {
     };
     // `retry` is a counter whose only job is to restart the connection.
     // oxlint-disable-next-line react/exhaustive-effect-dependencies
-  }, [interval, mode, retry]);
+  }, [symbol, interval, mode, retry]);
   return {
     candles,
     ticker,

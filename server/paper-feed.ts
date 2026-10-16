@@ -1,4 +1,4 @@
-import { intervals, type Candle, type Interval } from '../shared/types';
+import { intervals, SYMBOL_PATTERN, type Candle, type Interval } from '../shared/types';
 import type { FeedStatus } from '../shared/paper';
 
 // The subset of the WebSocket API the feed uses, so tests can supply a fake.
@@ -11,7 +11,7 @@ export interface FeedSocket {
 }
 export type SocketFactory = (url: string) => FeedSocket;
 export interface CandleFeed {
-  watch(next: Interval[]): void;
+  watch(next: { symbol: string; interval: Interval }[]): void;
   status(): FeedStatus;
   close(): void;
 }
@@ -25,7 +25,7 @@ export const openWebSocket: SocketFactory = (url) => new WebSocket(url) as unkno
 // Binance marks closed (`k.x`) are passed on; `onConnect` lets the caller fill whatever was
 // missed while disconnected from REST.
 export function createBinanceFeed(
-  onCandle: (interval: Interval, candle: Candle) => void,
+  onCandle: (symbol: string, interval: Interval, candle: Candle) => void,
   onConnect: () => void,
   open: SocketFactory = openWebSocket,
 ): CandleFeed {
@@ -42,13 +42,7 @@ export function createBinanceFeed(
   watchdog.unref?.();
   function connect() {
     if (closed || !watched) return;
-    const s = open(
-      STREAM +
-        watched
-          .split(',')
-          .map((i) => `btcusdt@kline_${i}`)
-          .join('/'),
-    );
+    const s = open(STREAM + watched);
     socket = s;
     last = Date.now();
     s.onopen = () => {
@@ -62,8 +56,14 @@ export function createBinanceFeed(
       try {
         const data = JSON.parse(String(event.data))?.data,
           k = data?.k;
-        if (data?.e !== 'kline' || !k?.x || !Object.hasOwn(intervals, k.i)) return;
-        onCandle(k.i, {
+        if (
+          data?.e !== 'kline' ||
+          !k?.x ||
+          !Object.hasOwn(intervals, k.i) ||
+          !SYMBOL_PATTERN.test(k.s)
+        )
+          return;
+        onCandle(k.s, k.i, {
           time: k.t / 1000,
           open: +k.o,
           high: +k.h,
@@ -87,7 +87,10 @@ export function createBinanceFeed(
   }
   return {
     watch(next) {
-      const key = [...new Set(next)].sort().join(',');
+      // Stream names are lowercase, e.g. btcusdt@kline_1m/ethusdt@kline_5m.
+      const key = [...new Set(next.map((n) => `${n.symbol.toLowerCase()}@kline_${n.interval}`))]
+        .sort()
+        .join('/');
       if (key === watched) return;
       watched = key;
       clearTimeout(retry);

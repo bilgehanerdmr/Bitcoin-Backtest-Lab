@@ -19,7 +19,17 @@ class FakeSocket implements FeedSocket {
         stream: 'btcusdt@kline_1m',
         data: {
           e: 'kline',
-          k: { t, i: '1m', o: '100', h: '102', l: '99', c: '101', v: '3.5', x: closed },
+          k: {
+            t,
+            s: 'BTCUSDT',
+            i: '1m',
+            o: '100',
+            h: '102',
+            l: '99',
+            c: '101',
+            v: '3.5',
+            x: closed,
+          },
         },
       }),
     });
@@ -41,7 +51,11 @@ describe('Binance kline feed', () => {
   it('passes on only closed candles from one combined stream', () => {
     const onCandle = vi.fn(),
       feed = createBinanceFeed(onCandle, () => {}, open);
-    feed.watch(['5m', '1m', '1m']);
+    feed.watch([
+      { symbol: 'BTCUSDT', interval: '5m' },
+      { symbol: 'BTCUSDT', interval: '1m' },
+      { symbol: 'BTCUSDT', interval: '1m' },
+    ]);
     expect(sockets).toHaveLength(1);
     expect(sockets[0].url).toBe(
       'wss://data-stream.binance.vision/stream?streams=btcusdt@kline_1m/btcusdt@kline_5m',
@@ -52,16 +66,49 @@ describe('Binance kline feed', () => {
     sockets[0].onmessage!({ data: 'not json' });
     sockets[0].kline(true);
     expect(onCandle.mock.calls).toEqual([
-      ['1m', { time: 1704067200, open: 100, high: 102, low: 99, close: 101, volume: 3.5 }],
+      [
+        'BTCUSDT',
+        '1m',
+        { time: 1704067200, open: 100, high: 102, low: 99, close: 101, volume: 3.5 },
+      ],
     ]);
-    feed.watch(['1m', '5m']);
+    feed.watch([
+      { symbol: 'BTCUSDT', interval: '1m' },
+      { symbol: 'BTCUSDT', interval: '5m' },
+    ]);
     expect(sockets).toHaveLength(1);
+    feed.close();
+  });
+  it('subscribes to every pair in one stream and passes on the pair of each candle', () => {
+    const onCandle = vi.fn(),
+      feed = createBinanceFeed(onCandle, () => {}, open);
+    feed.watch([
+      { symbol: 'ETHUSDT', interval: '1m' },
+      { symbol: 'BTCUSDT', interval: '1m' },
+    ]);
+    expect(sockets[0].url).toBe(
+      'wss://data-stream.binance.vision/stream?streams=btcusdt@kline_1m/ethusdt@kline_1m',
+    );
+    const message = (s: string) =>
+      sockets[0].onmessage!({
+        data: JSON.stringify({
+          data: {
+            e: 'kline',
+            k: { t: 0, s, i: '1m', o: '2', h: '3', l: '1', c: '2', v: '9', x: true },
+          },
+        }),
+      });
+    message('ETHUSDT');
+    message('ETHBTC');
+    expect(onCandle.mock.calls).toEqual([
+      ['ETHUSDT', '1m', { time: 0, open: 2, high: 3, low: 1, close: 2, volume: 9 }],
+    ]);
     feed.close();
   });
   it('reconnects with growing delays and asks for a REST catch-up on every connect', () => {
     const onConnect = vi.fn(),
       feed = createBinanceFeed(() => {}, onConnect, open);
-    feed.watch(['1m']);
+    feed.watch([{ symbol: 'BTCUSDT', interval: '1m' }]);
     sockets[0].onopen!();
     expect(onConnect).toHaveBeenCalledTimes(1);
     sockets[0].close();
@@ -88,7 +135,7 @@ describe('Binance kline feed', () => {
       () => {},
       open,
     );
-    feed.watch(['1h']);
+    feed.watch([{ symbol: 'BTCUSDT', interval: '1h' }]);
     sockets[0].onopen!();
     vi.advanceTimersByTime(45000);
     sockets[0].kline(false);

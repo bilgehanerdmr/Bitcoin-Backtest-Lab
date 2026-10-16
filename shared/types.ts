@@ -9,6 +9,11 @@ export const intervals = {
 export type Interval = keyof typeof intervals;
 // First BTCUSDT kline on Binance Spot; earlier live ranges have no data at all.
 export const LIVE_DATA_START = '2017-08-17';
+// Binance USDT spot pairs only, e.g. BTCUSDT, 1000SATSUSDT.
+export const DEFAULT_SYMBOL = 'BTCUSDT';
+export const SYMBOL_PATTERN = /^[A-Z0-9]{1,20}USDT$/;
+// Configs saved before multi-coin support have no symbol; they all used BTCUSDT.
+export const symbolOf = (c: { symbol?: string }) => c.symbol ?? DEFAULT_SYMBOL;
 export type Mode = 'live' | 'demo';
 export type Strategy = 'sma' | 'rsi' | 'breakout' | 'custom' | 'python';
 export interface Candle {
@@ -21,6 +26,7 @@ export interface Candle {
 }
 export interface Config {
   strategy: Strategy;
+  symbol?: string;
   custom?: CustomStrategy;
   python?: import('./python-strategy').PythonStrategy;
   interval: Interval;
@@ -107,6 +113,7 @@ export function strategyLabel(config: Config): string {
 }
 export const defaultConfig: Config = {
   strategy: 'sma',
+  symbol: DEFAULT_SYMBOL,
   interval: '1h',
   start: new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10),
   end: new Date().toISOString().slice(0, 10),

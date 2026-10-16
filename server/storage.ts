@@ -6,7 +6,7 @@ import {
   validateWorkspace,
   type Workspace,
 } from '../shared/workspace';
-import type { Result } from '../shared/types';
+import { DEFAULT_SYMBOL, type Result } from '../shared/types';
 import * as paperStore from './paper-store';
 db.exec(
   'CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL)',
@@ -32,11 +32,11 @@ export function writeWorkspace(workspace: Workspace) {
 export function exportBackup(): Backup {
   return {
     format: 'bitcoin-lab-backup',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     candles: db
       .prepare(
-        'SELECT interval,time,open,high,low,close,volume FROM candles ORDER BY interval,time',
+        'SELECT symbol,interval,time,open,high,low,close,volume FROM candles ORDER BY symbol,interval,time',
       )
       .all() as unknown as Backup['candles'],
     backtests: (
@@ -66,13 +66,22 @@ export function importBackup(input: unknown): ImportSummary {
     workspace,
   };
   const candle = db.prepare(
-      'INSERT OR IGNORE INTO candles (interval,time,open,high,low,close,volume) VALUES (?,?,?,?,?,?,?)',
+      'INSERT OR IGNORE INTO candles (symbol,interval,time,open,high,low,close,volume) VALUES (?,?,?,?,?,?,?,?)',
     ),
     report = db.prepare('INSERT OR IGNORE INTO backtests (id,created_at,payload) VALUES (?,?,?)');
   db.exec('BEGIN IMMEDIATE');
   try {
     for (const c of input.candles) {
-      const { changes } = candle.run(c.interval, c.time, c.open, c.high, c.low, c.close, c.volume);
+      const { changes } = candle.run(
+        c.symbol ?? DEFAULT_SYMBOL,
+        c.interval,
+        c.time,
+        c.open,
+        c.high,
+        c.low,
+        c.close,
+        c.volume,
+      );
       if (changes) summary.candlesAdded++;
       else summary.candlesSkipped++;
     }

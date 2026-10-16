@@ -12,7 +12,9 @@ test('one-minute real Binance chart and full-day historical backtest', async ({
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
-  const chartResponse = page.waitForResponse((r) => r.url().includes('/api/candles?interval=1m'));
+  const chartResponse = page.waitForResponse(
+    (r) => r.url().includes('/api/candles?') && r.url().includes('interval=1m'),
+  );
   await page.getByRole('button', { name: '1m', exact: true }).click();
   const response = await chartResponse;
   expect(response.ok()).toBe(true);

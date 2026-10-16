@@ -123,7 +123,7 @@ test('connection failure stays explicit and retry clears stale errors', async ({
     volume: 10,
   }));
   await page.routeWebSocket(/data-stream\.binance\.vision/, (ws) => ws.close());
-  await page.route('**/api/ticker', (route) =>
+  await page.route('**/api/ticker?*', (route) =>
     route.fulfill({ status: 400, json: { error: 'Test: veri bağlantısı kesildi.' } }),
   );
   await page.route('**/api/candles?*', (route) =>
@@ -132,9 +132,9 @@ test('connection failure stays explicit and retry clears stale errors', async ({
   await page.goto('/');
   await expect(page.getByText('Test: veri bağlantısı kesildi.')).toBeVisible();
   await expect(page.getByText('Demo çalışma alanı.')).not.toBeVisible();
-  await page.unroute('**/api/ticker');
+  await page.unroute('**/api/ticker?*');
   await page.unroute('**/api/candles?*');
-  await page.route('**/api/ticker', (route) =>
+  await page.route('**/api/ticker?*', (route) =>
     route.fulfill({
       json: {
         lastPrice: '200',
@@ -153,4 +153,39 @@ test('connection failure stays explicit and retry clears stale errors', async ({
   await expect(page.locator('.price-chart canvas').first()).toBeVisible();
   await expect(page.getByText('Test: veri bağlantısı kesildi.')).not.toBeVisible();
   await expect(page.locator('.price-metric .metric-value')).toContainText('$200.00');
+});
+test('market data endpoints accept only Binance USDT spot pairs', async ({ request }) => {
+  for (const url of [
+    '/api/candles?symbol=BTCTRY&interval=1h',
+    '/api/candles?symbol=ethusdt&interval=1h',
+    '/api/ticker?symbol=BTC-USDT',
+  ]) {
+    const response = await request.get(url);
+    expect(response.status()).toBe(400);
+    expect((await response.json()).error).toMatch(/USDT spot/);
+  }
+  const backtest = await request.post('/api/backtests', {
+    data: {
+      strategy: 'sma',
+      symbol: 'ETHBTC',
+      interval: '1h',
+      start: '2024-01-01',
+      end: '2024-01-02',
+      capital: 10000,
+      allocation: 95,
+      fee: 0.1,
+      slippage: 0.05,
+      stopLoss: 3,
+      takeProfit: 6,
+      fast: 9,
+      slow: 21,
+      rsiPeriod: 14,
+      rsiBuy: 30,
+      rsiSell: 70,
+      lookback: 20,
+      mode: 'live',
+    },
+  });
+  expect(backtest.status()).toBe(400);
+  expect((await backtest.json()).error).toMatch(/USDT spot/);
 });

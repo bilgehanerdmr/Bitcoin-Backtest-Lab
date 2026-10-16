@@ -41,12 +41,14 @@ describe('Historical data provider', () => {
         );
       });
       vi.stubGlobal('fetch', fetch);
-      const data = await market.getCandles(interval, start, start + 1200 * step);
+      const data = await market.getCandles('BTCUSDT', interval, start, start + 1200 * step);
       expect(data).toHaveLength(1201);
       expect(fetch).toHaveBeenCalledTimes(2);
       expect(data[0].time).toBe(start);
       expect(data.at(-1)!.time).toBe(start + 1200 * step);
-      expect(await market.getCandles(interval, start, start + 1200 * step)).toEqual(data);
+      expect(await market.getCandles('BTCUSDT', interval, start, start + 1200 * step)).toEqual(
+        data,
+      );
       expect(fetch).toHaveBeenCalledTimes(2);
     },
   );
@@ -62,25 +64,25 @@ describe('Historical data provider', () => {
   it('skips candles Binance never produced and remembers the outage', async () => {
     const fetch = outage([3, 4, 5]);
     vi.stubGlobal('fetch', fetch);
-    const data = await market.getCandles('1h', start, start + 10 * 3600);
+    const data = await market.getCandles('BTCUSDT', '1h', start, start + 10 * 3600);
     expect(data.map((b) => (b.time - start) / 3600)).toEqual([0, 1, 2, 6, 7, 8, 9, 10]);
-    expect(await market.getCandles('1h', start, start + 10 * 3600)).toEqual(data);
+    expect(await market.getCandles('BTCUSDT', '1h', start, start + 10 * 3600)).toEqual(data);
     expect(fetch).toHaveBeenCalledTimes(1);
   });
   it('confirms an outage at the end of the range from the next available candle', async () => {
     vi.stubGlobal('fetch', outage([3, 4, 5]));
-    const data = await market.getCandles('1h', start, start + 4 * 3600);
+    const data = await market.getCandles('BTCUSDT', '1h', start, start + 4 * 3600);
     expect(data.map((b) => (b.time - start) / 3600)).toEqual([0, 1, 2]);
   });
   it('rejects a range that falls entirely inside an outage', async () => {
     vi.stubGlobal('fetch', outage([3, 4, 5]));
-    await expect(market.getCandles('1h', start + 3 * 3600, start + 5 * 3600)).rejects.toThrow(
-      /borsa kesintisi/,
-    );
+    await expect(
+      market.getCandles('BTCUSDT', '1h', start + 3 * 3600, start + 5 * 3600),
+    ).rejects.toThrow(/borsa kesintisi/);
   });
   it('rejects incomplete historical ranges instead of quietly testing partial data', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('[]')));
-    await expect(market.getCandles('1h', start, start + 5 * 3600)).rejects.toThrow(
+    await expect(market.getCandles('BTCUSDT', '1h', start, start + 5 * 3600)).rejects.toThrow(
       /Eksik tarihsel veri/,
     );
   });
@@ -93,7 +95,7 @@ describe('Historical data provider', () => {
       'fetch',
       vi.fn(async () => new Response(JSON.stringify([row(now - step, step), row(now, step)]))),
     );
-    const data = await market.getCandles(interval, now - step, now + 10);
+    const data = await market.getCandles('BTCUSDT', interval, now - step, now + 10);
     expect(data).toHaveLength(1);
     expect(data[0].time).toBe(now - step);
   });
@@ -102,11 +104,11 @@ describe('Historical data provider', () => {
       .fn()
       .mockResolvedValue(new Response('{}', { status: 429, headers: { 'Retry-After': '120' } }));
     vi.stubGlobal('fetch', fetch);
-    await expect(market.binance('ticker/24hr')).rejects.toMatchObject({
+    await expect(market.binance('ticker/24hr', { symbol: 'BTCUSDT' })).rejects.toMatchObject({
       status: 503,
       message: expect.stringMatching(/istek sınırı/),
     });
-    await expect(market.binance('ticker/24hr')).rejects.toMatchObject({
+    await expect(market.binance('ticker/24hr', { symbol: 'BTCUSDT' })).rejects.toMatchObject({
       status: 503,
       message: expect.stringMatching(/Biraz sonra/),
     });
@@ -114,7 +116,7 @@ describe('Historical data provider', () => {
   });
   it('turns network failures into an actionable error without fabricating data', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network')));
-    await expect(market.getCandles('1h', start, start + 3600)).rejects.toMatchObject({
+    await expect(market.getCandles('BTCUSDT', '1h', start, start + 3600)).rejects.toMatchObject({
       status: 502,
       message: expect.stringMatching(/Binance bağlantısı kurulamadı/),
     });

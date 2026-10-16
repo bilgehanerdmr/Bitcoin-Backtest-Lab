@@ -4,7 +4,15 @@ import { existsSync } from 'node:fs';
 import { binance, db, getCandles } from './market';
 import { backtest, validateConfig, validateLiveRange } from '../shared/engine';
 import { demoCandles } from '../shared/demo';
-import { intervals, type Config, type Interval, type Result } from '../shared/types';
+import {
+  DEFAULT_SYMBOL,
+  intervals,
+  SYMBOL_PATTERN,
+  symbolOf,
+  type Config,
+  type Interval,
+  type Result,
+} from '../shared/types';
 import { runPython } from './python';
 import { localAccess } from './local-access';
 import { errorHandler } from './errors';
@@ -44,23 +52,37 @@ app.use('/api', (_req, res, next) => {
 app.get('/api/health', (_req, res) =>
   res.json({ status: 'ok', service: 'Bitcoin Lab', time: new Date().toISOString() }),
 );
-let tickerCache: { time: number; data: unknown } | null = null;
-app.get('/api/ticker', async (_req, res, next) => {
+// The `symbol` query parameter names a Binance USDT spot pair; BTCUSDT when omitted.
+function querySymbol(value: unknown): string {
+  const symbol = value === undefined ? DEFAULT_SYMBOL : String(value);
+  if (!SYMBOL_PATTERN.test(symbol))
+    throw new Error('Geçersiz işlem çifti: yalnızca Binance USDT spot çiftleri desteklenir.');
+  return symbol;
+}
+const tickerCache = new Map<string, { time: number; data: unknown }>();
+app.get('/api/ticker', async (req, res, next) => {
   try {
-    if (!tickerCache || Date.now() - tickerCache.time > 5000)
-      tickerCache = { time: Date.now(), data: await binance('ticker/24hr') };
-    res.json(tickerCache.data);
+    const symbol = querySymbol(req.query.symbol),
+      cached = tickerCache.get(symbol);
+    if (cached && Date.now() - cached.time <= 5000) {
+      res.json(cached.data);
+      return;
+    }
+    const data = await binance('ticker/24hr', { symbol });
+    tickerCache.set(symbol, { time: Date.now(), data });
+    res.json(data);
   } catch (e) {
     next(e);
   }
 });
 app.get('/api/candles', async (req, res, next) => {
   try {
-    const interval = String(req.query.interval || '1h') as Interval;
+    const symbol = querySymbol(req.query.symbol),
+      interval = String(req.query.interval || '1h') as Interval;
     if (!Object.hasOwn(intervals, interval)) throw new Error('Geçersiz zaman dilimi.');
     const end = Math.floor(Date.now() / 1000),
       start = end - intervals[interval] * 500;
-    res.json({ candles: await getCandles(interval, start, end), source: 'Binance Spot' });
+    res.json({ candles: await getCandles(symbol, interval, start, end), source: 'Binance Spot' });
   } catch (e) {
     next(e);
   }
@@ -69,7 +91,7 @@ app.get('/api/datasets', (_req, res) =>
   res.json(
     db
       .prepare(
-        'SELECT interval, COUNT(*) AS count, MIN(time) AS start, MAX(time) AS end FROM candles GROUP BY interval ORDER BY start',
+        'SELECT symbol, interval, COUNT(*) AS count, MIN(time) AS start, MAX(time) AS end FROM candles GROUP BY symbol, interval ORDER BY symbol, start',
       )
       .all(),
   ),
@@ -144,7 +166,7 @@ app.post('/api/backtests', async (req, res, next) => {
     const candles =
       config.mode === 'demo'
         ? demoCandles(config.interval, start, end)
-        : await getCandles(config.interval, start, end);
+        : await getCandles(symbolOf(config), config.interval, start, end);
     const signals =
       config.strategy === 'python' ? await runPython(config.python!, candles) : undefined;
     const result = backtest(candles, config, signals);

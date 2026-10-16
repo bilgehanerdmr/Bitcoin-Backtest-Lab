@@ -92,14 +92,14 @@ describe('Binance feed over a real WebSocket connection', () => {
           url.replace('wss://data-stream.binance.vision', `ws://127.0.0.1:${port}`),
         ) as never,
     );
-    feed.watch(['1m']);
+    feed.watch([{ symbol: 'BTCUSDT', interval: '1m' }]);
     await vi.waitFor(() => expect(onConnect).toHaveBeenCalledTimes(1));
     expect(feed.status()).toBe('live');
     expect(server.paths).toEqual(['/stream?streams=btcusdt@kline_1m']);
     server.send(kline(false));
     server.send(kline(true));
     await vi.waitFor(() => expect(onCandle).toHaveBeenCalledTimes(1));
-    expect(onCandle).toHaveBeenCalledWith('1m', {
+    expect(onCandle).toHaveBeenCalledWith('BTCUSDT', '1m', {
       time: 1760620020,
       open: 108123.45,
       high: 108199.99,

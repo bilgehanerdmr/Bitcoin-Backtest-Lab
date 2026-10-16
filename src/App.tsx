@@ -41,6 +41,7 @@ import {
   LIVE_DATA_START,
   strategyNames,
   strategyLabel,
+  symbolOf,
   type Config,
   type Interval,
   type Mode,
@@ -68,7 +69,8 @@ import {
 
 type Page = 'dashboard' | 'backtest' | 'paper' | 'strategies' | 'history' | 'data';
 type Summary = Omit<Result, 'trades' | 'equity'> & { tradeCount: number };
-type Dataset = { interval: Interval; count: number; start: number; end: number };
+type Dataset = { symbol: string; interval: Interval; count: number; start: number; end: number };
+const pairLabel = (symbol: string) => symbol.replace(/USDT$/, '') + ' / USDT';
 const navigation = [
   { id: 'dashboard', label: 'Genel Bakış', icon: LayoutDashboard },
   { id: 'backtest', label: 'Backtest Terminali', icon: FlaskConical },
@@ -128,7 +130,7 @@ function App() {
     ),
     [presetName, setPresetName] = useState(''),
     [compare, setCompare] = useState<string[]>([]);
-  const market = useMarket(interval, mode),
+  const market = useMarket(symbolOf(config), interval, mode),
     ticker = market.ticker,
     price = ticker ? +ticker.lastPrice : null,
     change = ticker ? +ticker.priceChangePercent : 0;
@@ -310,7 +312,7 @@ function App() {
   }
   function exportCandles() {
     download(
-      `BTCUSDT-${interval}-${mode}.csv`,
+      `${symbolOf(config)}-${interval}-${mode}.csv`,
       [
         'time,open,high,low,close,volume',
         ...market.candles.map((b) =>
@@ -412,7 +414,7 @@ function App() {
             <input
               type="date"
               value={config.start}
-              min={mode === 'live' ? LIVE_DATA_START : undefined}
+              min={mode === 'live' && symbolOf(config) === 'BTCUSDT' ? LIVE_DATA_START : undefined}
               max={config.end}
               onChange={(e) => update('start', e.target.value)}
             />
@@ -1471,8 +1473,8 @@ function App() {
                       </thead>
                       <tbody>
                         {datasets.map((d) => (
-                          <tr key={d.interval}>
-                            <td>₿ BTC / USDT</td>
+                          <tr key={d.symbol + d.interval}>
+                            <td>{pairLabel(d.symbol)}</td>
                             <td>{d.interval}</td>
                             <td>{d.count.toLocaleString('tr-TR')}</td>
                             <td>{date(d.start)}</td>

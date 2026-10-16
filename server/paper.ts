@@ -1,5 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { intervals, type Candle, type Interval, type Result, type Trade } from '../shared/types';
+import {
+  intervals,
+  symbolOf,
+  type Candle,
+  type Interval,
+  type Result,
+  type Trade,
+} from '../shared/types';
 import { backtest, simulate, strategySignals, strategyWarmup } from '../shared/engine';
 import { demoCandles } from '../shared/demo';
 import {
@@ -88,7 +95,13 @@ export function createPaperManager(options: PaperManagerOptions = {}) {
   }
   const active = () => store.listSessions().filter((s) => s.status !== 'stopped');
   function syncFeed() {
-    feed?.watch(active().flatMap((s) => (s.config.mode === 'live' ? [s.config.interval] : [])));
+    feed?.watch(
+      active().flatMap((s) =>
+        s.config.mode === 'live'
+          ? [{ symbol: symbolOf(s.config), interval: s.config.interval }]
+          : [],
+      ),
+    );
   }
   // Open time of the newest candle that has closed for this session.
   function closedUntil(s: PaperSession, settle = 0): number {
@@ -111,7 +124,7 @@ export function createPaperManager(options: PaperManagerOptions = {}) {
   function load(s: PaperSession, end: number): Promise<Candle[]> {
     return s.config.mode === 'demo'
       ? Promise.resolve(demoCandles(s.config.interval, s.warmupStart, end))
-      : getCandles(s.config.interval, s.warmupStart, end);
+      : getCandles(symbolOf(s.config), s.config.interval, s.warmupStart, end);
   }
   // A session ends where a backtest of it would stop being valid: maxCandles in one
   // simulation, and whole report days within 50,000 candles.
@@ -299,15 +312,20 @@ export function createPaperManager(options: PaperManagerOptions = {}) {
     return Promise.all(jobs).then(() => {});
   }
   // A candle the WebSocket marked closed: cache it, then let matching sessions catch up.
-  function ingest(interval: Interval, candle: Candle): Promise<void> {
+  function ingest(symbol: string, interval: Interval, candle: Candle): Promise<void> {
     try {
-      storeClosedCandle(interval, candle);
+      storeClosedCandle(symbol, interval, candle);
     } catch {
       return Promise.resolve();
     }
     return Promise.all(
       active()
-        .filter((s) => s.config.mode === 'live' && s.config.interval === interval)
+        .filter(
+          (s) =>
+            s.config.mode === 'live' &&
+            symbolOf(s.config) === symbol &&
+            s.config.interval === interval,
+        )
         .map((s) => serial(s.id, () => advance(s.id, candle.time))),
     ).then(() => {});
   }

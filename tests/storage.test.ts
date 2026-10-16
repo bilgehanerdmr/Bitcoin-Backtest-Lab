@@ -32,9 +32,9 @@ function fixture(): Backup {
   const report = backtest(candles, config);
   return {
     format: 'bitcoin-lab-backup',
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
-    candles: candles.map((c) => ({ ...c, interval: '1m' })),
+    candles: candles.map((c) => ({ ...c, symbol: 'BTCUSDT', interval: '1m' })),
     backtests: [report],
     workspace: {
       presets: [{ name: 'Taşınan özel strateji', config }],
@@ -96,6 +96,40 @@ describe('Portable local storage', () => {
     const legacy = fixture();
     delete legacy.backtests[0].missingCandles;
     expect(() => validateBackup(legacy)).not.toThrow();
+  });
+  it('opens version 1 backups and files their candles under BTCUSDT', () => {
+    const backup = fixture(),
+      legacy = {
+        ...backup,
+        version: 1 as const,
+        candles: backup.candles.map(({ symbol: _symbol, ...c }) => c),
+      };
+    expect(storage.importBackup(legacy).candlesAdded).toBe(100);
+    const exported = storage.exportBackup();
+    expect(exported.version).toBe(2);
+    expect(exported.candles).toEqual(backup.candles);
+  });
+  it('keeps candles of different pairs apart and rejects pairs other than USDT spot', () => {
+    const backup = fixture();
+    backup.candles.push(
+      ...backup.candles.map((c) => ({
+        ...c,
+        symbol: 'ETHUSDT',
+        open: c.open / 30,
+        high: c.high / 30,
+        low: c.low / 30,
+        close: c.close / 30,
+      })),
+    );
+    expect(storage.importBackup(backup).candlesAdded).toBe(200);
+    const exported = storage.exportBackup().candles;
+    expect(exported.filter((c) => c.symbol === 'ETHUSDT')).toHaveLength(100);
+    expect(exported.filter((c) => c.symbol === 'BTCUSDT')).toEqual(backup.candles.slice(0, 100));
+    for (const symbol of ['BTCTRY', 'ethusdt', 'USDT', 42]) {
+      const bad = fixture();
+      bad.candles[0] = { ...bad.candles[0], symbol: symbol as string };
+      expect(() => validateBackup(bad)).toThrow(/mum verisi/);
+    }
   });
   it('does not duplicate records when the same backup is imported twice', () => {
     const backup = fixture();
@@ -169,7 +203,7 @@ describe('Portable local storage', () => {
   });
   it('rejects unsupported backups, malformed OHLC, unclosed candles and invalid rules', () => {
     const backup = fixture();
-    expect(() => storage.importBackup({ ...backup, version: 2 })).toThrow(/sürüm/);
+    expect(() => storage.importBackup({ ...backup, version: 3 } as never)).toThrow(/sürüm/);
     const bad = structuredClone(backup);
     bad.candles[0].high = 1;
     expect(() => storage.importBackup(bad)).toThrow(/mum verisi/);
