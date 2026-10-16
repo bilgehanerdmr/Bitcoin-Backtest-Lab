@@ -15,6 +15,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   market.db.close();
+  vi.useRealTimers();
   vi.unstubAllEnvs();
 });
 function fixture(): Backup {
@@ -172,6 +173,8 @@ describe('Portable local storage', () => {
     const bad = structuredClone(backup);
     bad.candles[0].high = 1;
     expect(() => storage.importBackup(bad)).toThrow(/mum verisi/);
+    // A frozen clock keeps the current minute's candle unclosed during validation.
+    vi.useFakeTimers({ toFake: ['Date'] });
     bad.candles[0] = { ...backup.candles[0], time: Math.floor(Date.now() / 60000) * 60 };
     expect(() => storage.importBackup(bad)).toThrow(/kapanmamış/);
     bad.candles = [];

@@ -1,0 +1,32 @@
+name: Live Binance tests
+
+# Manual only: real market data, a WebSocket paper session and a few minutes of runtime.
+# Binance may refuse some regions; a connection error here is about access, not the code.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: Real Binance data and paper trading
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: curl -sS --max-time 15 https://data-api.binance.vision/api/v3/ping
+      - run: npm run test:e2e -- live.spec.ts
+        env:
+          LIVE_TESTS: '1'
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: live-results
+          path: test-results/
+          retention-days: 7

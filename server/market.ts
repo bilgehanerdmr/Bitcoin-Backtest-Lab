@@ -38,6 +38,31 @@ export async function binance(path: string, params: Record<string, string> = {})
     throw new HttpError(502, 'Binance geçersiz bir yanıt döndürdü.');
   }
 }
+// A candle the WebSocket stream marked closed (`k.x`); REST serves the same row. Gaps
+// before it are still left for getCandles to confirm against REST.
+export function storeClosedCandle(interval: Interval, b: Candle) {
+  const step = intervals[interval];
+  if (
+    ![b.time, b.open, b.high, b.low, b.close, b.volume].every(Number.isFinite) ||
+    b.time % step !== 0 ||
+    // Allows for a local clock running slightly behind Binance.
+    (b.time + step) * 1000 > Date.now() + 60000 ||
+    b.low <= 0 ||
+    b.volume < 0 ||
+    b.high < Math.max(b.open, b.close) ||
+    b.low > Math.min(b.open, b.close)
+  )
+    throw new HttpError(502, 'Veri sağlayıcı geçersiz mum döndürdü.');
+  db.prepare('INSERT OR REPLACE INTO candles VALUES(?,?,?,?,?,?,?)').run(
+    interval,
+    b.time,
+    b.open,
+    b.high,
+    b.low,
+    b.close,
+    b.volume,
+  );
+}
 let queue: Promise<unknown> = Promise.resolve();
 export function getCandles(interval: Interval, start: number, end: number): Promise<Candle[]> {
   const job = queue.then(() => loadCandles(interval, start, end));

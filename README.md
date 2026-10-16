@@ -49,6 +49,7 @@ In this mode, both the interface and API are served at **http://127.0.0.1:3001**
 - SMA crossover, Wilder RSI mean reversion, and Donchian channel breakout strategies.
 - Custom candle strategy editor: price, body, wick, percentage, and volume conditions; separate entry/exit groups and reusable patterns.
 - Python Strategy Workshop: `.py` uploads, code editing, syntax checks, local templates, and backtests driven by Python signals.
+- Paper trading (`Canlı Test`): runs built-in, custom candle, and Python strategies on live Binance candles with a virtual portfolio, using exactly the backtest calculation, with automatic reports and a side-by-side backtest comparison.
 - Capital, position allocation, entry/exit fees and slippage, stop-loss, and take-profit settings.
 - Net return, buy-and-hold benchmark, maximum drawdown, win rate, profit factor, annualized Sharpe, and total fees.
 - Equity and drawdown charts, paginated trade history, and CSV export.
@@ -104,6 +105,49 @@ Charts use [TradingView Lightweight Charts™](https://www.tradingview.com/). Li
 
 Liquidity, partial fills, quantity/price increments, market impact, futures, and funding fees are not modelled. The application does not submit real orders. Historical results do not guarantee future performance.
 
+## Paper trading
+
+Open **Paper Trading** (`Canlı Test`), choose a strategy (built-in, custom candle, or Python), timeframe, capital and risk settings, and the number of warmup candles (`Isınma mumu`), then click **Start paper trading** (`Canlı testi başlat`). The strategy runs on real-time Binance BTC/USDT data on every closed candle, opens and closes virtual trades, and its report updates after each close. **No real orders are sent and no API key is used;** the portfolio is entirely virtual.
+
+### How it works
+
+- Sessions run on the **server**, not in the browser. They continue after the tab is closed, as long as the server runs; the page reads their state every 3 seconds.
+- Candle closes come from the closed-candle flag (`k.x`) of the Binance WebSocket kline stream and are written to the SQLite cache. After a disconnect, the server reconnects with increasing delays and fills missed candles over REST. A check that runs every second also fetches, over REST, any candle still unprocessed 15 seconds after its close.
+- At start, the chosen number of earlier candles (default 300, never fewer than the strategy needs) warms up the strategy. **Trades, the equity curve, buy-and-hold, and metrics count only from the first candle that opens after the start.**
+- On every close, the session's whole candle series, from its warmup start, runs through the **same functions** as the backtest engine: signal on the closed candle, execution at the next candle's open, the same fees and slippage, the same stop-loss/take-profit priority, spot, long-only, one position. There is no second calculation engine.
+- A session keeps a **copy** of the strategy code and settings it started with. Editing or deleting the template afterward does not affect a running session.
+- Session state, signals, trades, and the equity curve are stored in SQLite. After a server restart, active sessions resume where they stopped and process the candles they missed.
+
+### Data gaps
+
+The backtest rule applies: candles that Binance proves never existed, by returning a later candle, are skipped and counted as candles unavailable on Binance. While a gap is not yet confirmed (for example, REST has not published the latest candles), the session switches to **Waiting** (`Bekliyor`), makes no trades, and never fabricates candles; it continues automatically when data arrives.
+
+### Python strategies
+
+- The Python runner is one-shot. On every closed candle the strategy is **replayed** from the session's warmup start, so `state` and signals match a backtest of the same candles.
+- Strategies **must be deterministic**. If a strategy returns a different signal for a candle already processed (randomness, clock time, external data), the session switches to **Error** (`Hata`) instead of silently rewriting its history.
+- The 15-second limit applies to each replay. In measurements, strategies that look at the last N candles stay under one second even at 50,000 candles. Strategies that scan the whole history on every call reach the limit at roughly 15,000–20,000 candles, as they would in a normal backtest of that length; use a window such as `candles[-N:]`.
+- The **Python Logs** tab (`Python Logları`) shows `print` output only from candles closed after the start (16 KB per replay, last 200 lines).
+- A Python error does not crash the session manager: only that session switches to **Error** and shows the message. **Retry** (`Yeniden dene`) tries again; **Stop** (`Durdur`) saves the report up to the last successful candle.
+
+### Reports and comparison
+
+- The session view shows the status (Running / Waiting / Error / Stopped; `Çalışıyor / Bekliyor / Hata / Durdu`), virtual balance, open position, last signal, last processed candle, connection status, equity curve, trades (with CSV export), and Python logs.
+- **Stop** (`Durdur`) saves the final report to Test History, labelled **Paper** (`Canlı (paper)`). Stopping applies the backtest's end-of-test rule: no new entry on the last processed candle, and any open position closes at that candle's close. The final report therefore equals a backtest of the same candles. A report needs at least 3 traded candles.
+- **Backtest the same period** (`Aynı dönemi backtest et`) re-reads the session's candles, runs the strategy again from scratch, and shows the result next to the live result. This backtest is saved to Test History labelled **Comparison** (`Karşılaştırma`). The live column is the final report the session would produce if stopped at that candle. Built-in strategies are expected to match exactly; for Python, a difference indicates non-deterministic code.
+- In paper and comparison reports, warmup uses candles before the trading start. A terminal backtest with the same dates warms up inside the range instead, so its result can differ; the report footnote states this.
+
+### Demo stream
+
+In demo mode, paper trading runs offline on deterministic synthetic candles and is labelled **DEMO** throughout. With **Fast (1 candle / s)** (`Hızlı · 1 mum / sn`), the simulated clock runs ahead of real time and timestamps are synthetic; it pauses while the server is down or the session is in error. **Real time** (`Gerçek zaman`) follows the real clock.
+
+### Limits
+
+- At most **3** active sessions (Running, Waiting, or Error) at a time.
+- At most **50,000 candles** per session, warmup included; the final report's whole-day range must also fit the backtest's 50,000-candle limit (about 34 calendar days on 1m, about 173 days on 5m, years on 1h). A session that reaches the limit stops itself and saves its report.
+- Trades are simulated from OHLCV candles; order-book depth, latency, partial fills, and actual fill prices are not modelled. A signal executes at the next candle's opening price and is recorded when that candle closes.
+- The server uses the computer's clock; if it runs behind Binance, a candle is processed on the next check.
+
 ## Storage and architecture
 
 - `src/`: React + TypeScript interface and charts.
@@ -112,6 +156,7 @@ Liquidity, partial fills, quantity/price increments, market impact, futures, and
 - `data/bitcoin-lab.sqlite`: automatically created database for real candle caching and reports. Demo candles are not stored in the real-data table; demo reports are saved with a source label.
 - `DATABASE_PATH`: alternative SQLite file path. Its parent directory must already exist.
 - Templates and preferences are stored in the same SQLite file's `workspace` table. Legacy `localStorage` templates are merged into SQLite on first load; old keys are removed after a successful save.
+- `server/paper.ts`, `server/paper-feed.ts`, `server/paper-store.ts`: paper trading sessions, the Binance kline stream, and the `paper_*` SQLite tables. `shared/paper.ts` holds the session model and validation.
 
 The application is a local workspace for one user, bound to `127.0.0.1`. It has no accounts, cloud synchronization, JavaScript code execution, or automatic parameter optimization. The Python runner is intended for trusted local code and is unsuitable for a public, multi-user deployment.
 
@@ -146,7 +191,7 @@ def on_candle(candles, state):
 
 Requires **Python 3.9+**. The default command is `python3`; to use another interpreter or virtual environment, start the server with `BTC_PYTHON=/absolute/path/.venv/bin/python npm run dev`. Additional packages are not installed automatically; install them in the selected environment if needed. The user's site-packages directory is excluded by `-I`, so packages must be installed in the selected virtual environment. See the [Python isolated mode documentation](https://docs.python.org/3/using/cmdline.html#cmdoption-I).
 
-**Run only code you trust.** Python runs in a separate process, but this is not a security sandbox: code can access files and the network with your user permissions. Uploading code, importing a backup, and checking syntax do not execute it; **Start Backtest** (`Backtest Başlat`) does. Application secrets in environment variables are not forwarded to the subprocess. The API rejects external-site Origin/Host requests; these checks do not replace user authentication.
+**Run only code you trust.** Python runs in a separate process, but this is not a security sandbox: code can access files and the network with your user permissions. Uploading code, importing a backup, and checking syntax do not execute it; **Start Backtest** (`Backtest Başlat`) and **Start paper trading** (`Canlı testi başlat`) do (paper trading runs it on every closed candle). Application secrets in environment variables are not forwarded to the subprocess. The API rejects external-site Origin/Host requests; these checks do not replace user authentication.
 
 Execution is limited to 15 seconds, source code to 64 KB, process output to 2 MB, and `print` logs to 16 KB. Logs are not included in reports. On Linux, process address space is also limited to 512 MB; the same memory limit is not applied on macOS/Windows. Optimize the computation or narrow the date range if you reach the time limit.
 
@@ -156,7 +201,7 @@ Python source code is included with templates and reports in **Data Center** (`V
 
 - **Test History** (`Test Geçmişi`): use a row's trash icon to delete one report, or select multiple checkboxes and click **Delete selected** (`Seçilenleri sil`). The confirmation dialog lists the selected reports. Candles, strategy templates, and previously downloaded backups are retained. Use **Load older reports** (`Daha eski raporları yükle`) to access reports beyond the first 100.
 - **Strategies → Your Saved Templates** (`Stratejiler → Kaydettiğiniz Şablonlar`): use the trash icon on a template card to remove it. Reports created from that template and candle data are retained.
-- **Data Center → Export all data** (`Veri Merkezi → Tüm verileri dışa aktar`): downloads the entire local store as a versioned JSON backup, including candles for all timeframes, all reports/trades/equity curves, custom strategy rules, templates, and risk defaults.
+- **Data Center → Export all data** (`Veri Merkezi → Tüm verileri dışa aktar`): downloads the entire local store as a versioned JSON backup, including candles for all timeframes, all reports/trades/equity curves, paper trading sessions (signals, trades, equity curve, and strategy copy), custom strategy rules, templates, and risk defaults. Imported paper sessions arrive **stopped**, so importing never runs strategy code. Backups without paper sessions still open.
 - On the other computer, copy this project's code and run `npm install` and `npm run dev`. Open the JSON file through **Data Center → Choose backup file** (`Veri Merkezi → Yedek dosyası seç`), review the content counts, and click **Start import** (`İçe aktarmayı başlat`).
 
 Imports write to the local SQLite database. Existing candles with the same timeframe and opening time, and existing reports with the same ID, are preserved. New records are added; templates with the same name and configuration are not duplicated. Defaults from the backup are applied. The entire file is validated first, then candles, reports, and workspace data are written in a single SQLite transaction; any error rolls back the whole import. Deleted reports can be restored by importing a backup created before deletion.
@@ -184,7 +229,7 @@ Browser end-to-end tests require Google Chrome:
 npm run test:e2e
 ```
 
-Tests cover demo backtests, report persistence, CSV downloads, template saving, comparisons, and mobile overflow checks. Screenshots are written to `test-results/`. Playwright starts its own development server on ports 5273 (interface) and 3101 (API), using a new SQLite file in a temporary directory; your `data/` files and backups are unaffected. Set `PLAYWRIGHT_BASE_URL` to test against a running server; records created by the tests will then remain in that server's database.
+Tests cover demo backtests, report persistence, CSV downloads, template saving, comparisons, the demo paper trading stream (start, comparison, stop, Python logs, session limit), and mobile overflow checks. Screenshots are written to `test-results/`. Playwright starts its own development server on ports 5273 (interface) and 3101 (API), using a new SQLite file in a temporary directory; your `data/` files and backups are unaffected. Set `PLAYWRIGHT_BASE_URL` to test against a running server; records created by the tests will then remain in that server's database.
 
 To test the real Binance connection and backtests with real market data separately:
 
@@ -192,7 +237,7 @@ To test the real Binance connection and backtests with real market data separate
 LIVE_TESTS=1 npm run test:e2e -- live.spec.ts
 ```
 
-These integration tests require internet access and are skipped in the default run. Unit tests also use a temporary in-memory database to verify pagination beyond 1,000 candles, caching, missing data, unclosed candles, and the 429 retry delay.
+These integration tests require access to Binance and are skipped in the default run. They include a real one-minute paper trading session that checks the warmup loaded over REST, that closed candles arrive through the WebSocket (processed sooner than the 15-second REST fallback could), and that the comparison backtest is identical; it takes about 5 minutes. If your network blocks Binance, run the same tests from GitHub with **Actions → Live Binance tests → Run workflow** (`.github/workflows/live.yml`, manual only; Binance may refuse some regions). Without network access, `tests/paper-socket.test.ts` still drives the feed through Node's real WebSocket client against a local server sending Binance's exact message format. Unit tests also use a temporary in-memory database to verify pagination beyond 1,000 candles, caching, missing data, unclosed candles, and the 429 retry delay. `tests/paper.test.ts` feeds candles to paper trading one at a time and compares every intermediate state and the final report with a backtest of the same candles (built-in strategies, a custom candle strategy, Python, and a series with Binance outages). It also covers waiting on an unconfirmed gap, REST catch-up after a disconnect, server restarts, Python errors, template deletion, the three-session limit, the candle limit, and backups.
 
 ## License
 

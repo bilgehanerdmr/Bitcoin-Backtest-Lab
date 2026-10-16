@@ -121,9 +121,12 @@ export function PriceChart({
 export function EquityChart({
   points,
   drawdown = false,
+  timeVisible = false,
 }: {
   points: EquityPoint[];
   drawdown?: boolean;
+  // Paper sessions span hours, so the axis needs times rather than only dates.
+  timeVisible?: boolean;
 }) {
   const el = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -131,7 +134,7 @@ export function EquityChart({
     const ch = createChart(el.current, {
       ...options,
       autoSize: true,
-      timeScale: { ...options.timeScale, timeVisible: false },
+      timeScale: { ...options.timeScale, timeVisible },
       handleScroll: false,
       handleScale: false,
     });
@@ -161,7 +164,7 @@ export function EquityChart({
     }
     ch.timeScale().fitContent();
     return () => ch.remove();
-  }, [points, drawdown]);
+  }, [points, drawdown, timeVisible]);
   return (
     <div
       className="equity-chart"

@@ -69,6 +69,8 @@ export interface Result {
   missingCandles?: number;
   start: number;
   end: number;
+  // Reports produced by a paper session: its final report or a comparison backtest.
+  paper?: PaperReportInfo;
   trades: Trade[];
   equity: EquityPoint[];
   metrics: {
@@ -82,6 +84,13 @@ export interface Result {
     totalFees: number;
     finalEquity: number;
   };
+}
+export interface PaperReportInfo {
+  kind: 'session' | 'comparison';
+  sessionId: string;
+  startedAt: string;
+  // Open time of the first warmup candle; trading starts at the report's `start`.
+  warmupStart: number;
 }
 export const strategyNames: Record<Strategy, string> = {
   sma: 'Hareketli Ortalama Kesişimi',

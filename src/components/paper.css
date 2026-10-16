@@ -1,0 +1,243 @@
+.paper-grid {
+  display: grid;
+  grid-template-columns: 324px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.paper-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.paper-main > .notice {
+  margin-bottom: 0;
+}
+.paper-hint {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.paper-sessions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.paper-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: #c3cad6;
+  font-size: 11px;
+}
+.paper-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.paper-chip small {
+  color: var(--muted);
+  font-size: 9px;
+  white-space: nowrap;
+}
+.paper-chip.active {
+  border-color: #e7b96166;
+  color: #e9cf98;
+}
+.paper-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--muted);
+}
+.paper-dot.running {
+  background: var(--green);
+}
+.paper-dot.waiting {
+  background: var(--gold);
+}
+.paper-dot.error {
+  background: var(--red);
+}
+.panel-heading.paper-heading {
+  flex-wrap: wrap;
+  height: auto;
+  min-height: 54px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  gap: 10px;
+}
+.paper-heading .heading-icon {
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.paper-heading h2 {
+  overflow-wrap: anywhere;
+}
+.paper-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+.paper-status {
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 3px;
+  border: 1px solid #8994a533;
+  color: #9aa4b3;
+}
+.paper-status.running {
+  color: var(--green);
+  border-color: #65c8a644;
+  background: #65c8a60d;
+}
+.paper-status.waiting {
+  color: var(--gold);
+  border-color: #e7b96144;
+  background: #e7b9610d;
+}
+.paper-status.error {
+  color: var(--red);
+  border-color: #eb838c44;
+  background: #eb838c0d;
+}
+.paper-session > .notice {
+  margin: 14px 18px 0;
+}
+.paper-message {
+  color: #cdc4ab;
+  background: #b38b350b;
+  border-color: #80663340;
+}
+.paper-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  padding: 16px 18px;
+}
+.paper-metrics .metric-card {
+  background: #0e1218;
+  padding: 14px 16px;
+}
+.paper-metrics .metric-value {
+  font-size: 18px;
+  margin: 9px 0 5px;
+  overflow-wrap: anywhere;
+}
+.paper-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 18px 16px;
+  padding: 14px 16px;
+  border: 1px solid #e7b96133;
+  border-radius: 7px;
+  background: #e7b9610a;
+}
+.paper-compare-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 550;
+}
+.paper-compare th,
+.paper-compare td {
+  padding: 9px 12px;
+}
+.paper-compare tr.paper-diff td {
+  color: var(--gold);
+}
+.paper-compare p {
+  margin: 0;
+  font-size: 11px;
+}
+.paper-warning {
+  color: var(--gold);
+}
+.paper-differences {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: #d8c79e;
+}
+.paper-compare small {
+  font-size: 10px;
+  line-height: 1.6;
+}
+.paper-compare .text-link {
+  margin-top: 0;
+  align-self: flex-start;
+}
+.result-tabs > .paper-csv {
+  margin-left: auto;
+  align-self: center;
+  border: 0;
+}
+.paper-logs {
+  margin: 0;
+  padding: 16px 18px;
+  min-height: 180px;
+  max-height: 360px;
+  overflow: auto;
+  font-size: 11px;
+  line-height: 1.7;
+  color: #b9c2d0;
+  background: #0b0e13;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 1000px) {
+  .paper-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 800px) {
+  .form-body > .paper-hint,
+  .form-body > .run-button {
+    grid-column: 1/-1;
+  }
+}
+@media (max-width: 600px) {
+  .paper-metrics {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 12px;
+  }
+  .paper-metrics .metric-value {
+    font-size: 15px;
+  }
+  .paper-compare {
+    margin: 0 12px 12px;
+    padding: 12px;
+  }
+  .paper-session > .notice {
+    margin: 12px 12px 0;
+  }
+  .paper-actions {
+    width: 100%;
+    margin-left: 0;
+  }
+  .paper-actions > button {
+    flex: 1 1 auto;
+  }
+}
+.tiny-badge.paper-badge {
+  margin-left: 6px;
+  color: #e3c587;
+  background: #e7b9610f;
+  border-color: #e7b96133;
+}

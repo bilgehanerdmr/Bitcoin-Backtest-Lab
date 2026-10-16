@@ -21,13 +21,21 @@ class History(Sequence):
 
 
 class LimitedLog:
-    def __init__(self):
+    def __init__(self, keep):
         self.size = 0
+        self.keep = keep
+        self.active = True
+        self.parts = []
 
     def write(self, text):
+        # A paper replay re-runs old candles; only output from new candles counts and is kept.
+        if not self.active:
+            return len(text)
         self.size += len(text.encode('utf-8'))
         if self.size > 16384:
             raise ValueError('Python günlük çıktısı 16 KB sınırını aştı. print çağrılarını azaltın.')
+        if self.keep:
+            self.parts.append(text)
         return len(text)
 
     def flush(self):
@@ -52,7 +60,11 @@ def main():
         # Checking or importing a strategy must never execute its code.
         return {'ok': True}
     scope = {'__name__': 'strategy'}
-    log = LimitedLog()
+    # 'replay' is a paper session re-running every candle from its warmup start.
+    replay = request['mode'] == 'replay'
+    log_from = request.get('logFrom', 0) if replay else 0
+    log = LimitedLog(replay)
+    log.active = log_from == 0
     with contextlib.redirect_stdout(log), contextlib.redirect_stderr(log):
         exec(code, scope)
         callback = scope.get('on_candle')
@@ -60,7 +72,8 @@ def main():
             raise ValueError('on_candle çağrılabilir bir fonksiyon olmalı.')
         inspect.signature(callback).bind([], {})
         history, state, signals = History(), {}, []
-        for candle in request['candles']:
+        for index, candle in enumerate(request['candles']):
+            log.active = index >= log_from
             history._items.append(MappingProxyType(candle))
             signal = callback(history, state)
             if signal is None:
@@ -68,6 +81,8 @@ def main():
             if not isinstance(signal, str) or signal not in ('buy', 'sell', 'hold'):
                 raise ValueError('Mum %d: on_candle yalnızca buy, sell, hold veya None döndürebilir.' % len(history))
             signals.append(signal)
+    if replay:
+        return {'signals': signals, 'logs': ''.join(log.parts)}
     return {'signals': signals}
 
 

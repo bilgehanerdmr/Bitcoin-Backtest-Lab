@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import type { Candle, Result } from '../../shared/types';
+import type { PaperDetail } from '../../shared/paper';
 test('one-minute real Binance chart and full-day historical backtest', async ({
   page,
   request,
@@ -83,4 +84,78 @@ test('real Binance ticker, closed candles, WebSocket updates and historical back
   expect(result.end * 1000 + 3600000).toBeLessThanOrEqual(Date.now());
   expect(result.metrics.finalEquity).toBeGreaterThan(0);
   expect(errors).toEqual([]);
+});
+test('real Binance paper session trades on closed 1m candles from the WebSocket', async ({
+  page,
+  request,
+}) => {
+  test.skip(
+    process.env.LIVE_TESTS !== '1',
+    'Opt-in integration test requires Binance network access.',
+  );
+  // Three traded one-minute candles plus the warmup candle that closes after the start.
+  test.setTimeout(8 * 60000);
+  const config = {
+    strategy: 'sma',
+    interval: '1m',
+    start: '2026-01-01',
+    end: '2026-01-01',
+    capital: 10000,
+    allocation: 95,
+    fee: 0.1,
+    slippage: 0.05,
+    stopLoss: 3,
+    takeProfit: 6,
+    fast: 3,
+    slow: 8,
+    rsiPeriod: 14,
+    rsiBuy: 30,
+    rsiSell: 70,
+    lookback: 20,
+    mode: 'live',
+  };
+  const existing: PaperDetail[] = await (await request.get('/api/paper')).json();
+  for (const session of existing.filter((s) => s.status !== 'stopped'))
+    await request.post(`/api/paper/${session.id}/stop`);
+  const started = await request.post('/api/paper', { data: { config, warmup: 60 } });
+  expect(started.ok()).toBe(true);
+  const id: string = (await started.json()).id;
+  const read = async (): Promise<PaperDetail> => (await request.get('/api/paper/' + id)).json();
+  // Warmup came from REST; the stream connects to the 1m kline channel.
+  expect((await read()).candleCount).toBeGreaterThanOrEqual(50);
+  await expect.poll(async () => (await read()).feed, { timeout: 60000 }).toBe('live');
+  await page.goto('/');
+  await page.locator('nav').getByRole('button', { name: 'Canlı Test', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Canlı test oturumu' })).toContainText(
+    'Canlı akış',
+  );
+  // The REST fallback waits 15 s after a close, so a candle processed sooner came from the
+  // WebSocket's closed-kline event.
+  const before = (await read()).lastProcessed!;
+  let delay = Infinity;
+  await expect
+    .poll(
+      async () => {
+        const s = await read();
+        if (s.lastProcessed! > before) delay = Date.now() / 1000 - (s.lastProcessed! + 60);
+        return s.lastProcessed! > before;
+      },
+      { timeout: 2 * 60000, intervals: [1000] },
+    )
+    .toBe(true);
+  expect(delay).toBeLessThan(14);
+  await expect
+    .poll(async () => (await read()).tradingCandles, { timeout: 5 * 60000, intervals: [5000] })
+    .toBeGreaterThanOrEqual(3);
+  const live = await read();
+  expect(live.status).toBe('running');
+  expect(live.equity.every((p, i) => !i || p.time - live.equity[i - 1].time === 60)).toBe(true);
+  const compared: PaperDetail = await (await request.post(`/api/paper/${id}/compare`)).json();
+  expect(compared.comparison).toMatchObject({ identical: true, differences: [] });
+  const stopped: PaperDetail = await (await request.post(`/api/paper/${id}/stop`)).json();
+  expect(stopped.status).toBe('stopped');
+  const report: Result = await (await request.get('/api/backtests/' + stopped.reportId)).json();
+  expect(report.source).toBe('Binance Spot');
+  expect(report.paper).toMatchObject({ kind: 'session', sessionId: id });
+  expect(report.candleCount).toBe(stopped.tradingCandles);
 });

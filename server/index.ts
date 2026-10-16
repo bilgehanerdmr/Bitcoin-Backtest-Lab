@@ -8,11 +8,13 @@ import { intervals, type Config, type Interval, type Result } from '../shared/ty
 import { runPython } from './python';
 import { localAccess } from './local-access';
 import { errorHandler } from './errors';
+import { createPaperManager } from './paper';
 import {
   deleteReports,
   exportBackup,
   importBackup,
   readWorkspace,
+  saveReport,
   writeWorkspace,
 } from './storage';
 const app = express();
@@ -146,11 +148,7 @@ app.post('/api/backtests', async (req, res, next) => {
     const signals =
       config.strategy === 'python' ? await runPython(config.python!, candles) : undefined;
     const result = backtest(candles, config, signals);
-    db.prepare('INSERT INTO backtests VALUES(?,?,?)').run(
-      result.id,
-      result.createdAt,
-      JSON.stringify(result),
-    );
+    saveReport(result);
     res.json(result);
   } catch (e) {
     next(e);
@@ -158,6 +156,31 @@ app.post('/api/backtests', async (req, res, next) => {
     running = false;
   }
 });
+// Paper sessions run here, on the server, independent of any open browser tab.
+const paper = createPaperManager();
+app.get('/api/paper', (_req, res) => res.json(paper.list()));
+app.get('/api/paper/:id', (req, res, next) => {
+  try {
+    res.json(paper.detail(req.params.id));
+  } catch (e) {
+    next(e);
+  }
+});
+app.post('/api/paper', async (req, res, next) => {
+  try {
+    res.json(await paper.start(req.body));
+  } catch (e) {
+    next(e);
+  }
+});
+for (const action of ['stop', 'retry', 'compare'] as const)
+  app.post(`/api/paper/:id/${action}`, async (req, res, next) => {
+    try {
+      res.json(await paper[action](req.params.id));
+    } catch (e) {
+      next(e);
+    }
+  });
 app.use('/api', (_req, res) => res.status(404).json({ error: 'API uç noktası bulunamadı.' }));
 if (existsSync('dist/index.html')) {
   app.use(express.static('dist'));
@@ -165,4 +188,8 @@ if (existsSync('dist/index.html')) {
 }
 app.use(errorHandler);
 const port = Number(process.env.PORT || 3001);
-app.listen(port, '127.0.0.1', () => console.log(`Bitcoin Lab API: http://127.0.0.1:${port}`));
+app.listen(port, '127.0.0.1', () => {
+  console.log(`Bitcoin Lab API: http://127.0.0.1:${port}`);
+  // Sessions that were running before a restart continue and process missed candles.
+  paper.resume().catch((e) => console.error(e));
+});

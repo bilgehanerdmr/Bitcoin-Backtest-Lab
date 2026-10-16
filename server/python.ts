@@ -12,11 +12,37 @@ import {
 import { HttpError } from './errors';
 
 const runner = fileURLToPath(new URL('./python-runner.py', import.meta.url));
+type RunOptions = { timeoutMs?: number; executable?: string };
 export async function runPython(
   strategy: PythonStrategy,
   candles: Candle[] | null,
-  options: { timeoutMs?: number; executable?: string } = {},
+  options: RunOptions = {},
 ): Promise<PythonSignal[]> {
+  const result = await execute(
+    strategy,
+    { mode: candles === null ? 'validate' : 'run', candles },
+    candles?.length ?? null,
+    options,
+  );
+  return result.signals;
+}
+// Paper sessions replay the strategy from their warmup start on every closed candle, so its
+// state matches a backtest exactly. Only `print` output from candles at `logFrom` onward is
+// returned and counted against the log limit.
+export async function replayPython(
+  strategy: PythonStrategy,
+  candles: Candle[],
+  logFrom: number,
+  options: RunOptions = {},
+): Promise<{ signals: PythonSignal[]; logs: string }> {
+  return execute(strategy, { mode: 'replay', candles, logFrom }, candles.length, options);
+}
+async function execute(
+  strategy: PythonStrategy,
+  request: { mode: 'validate' | 'run' | 'replay'; candles: Candle[] | null; logFrom?: number },
+  expected: number | null,
+  options: RunOptions,
+): Promise<{ signals: PythonSignal[]; logs: string }> {
   validatePythonStrategy(strategy);
   const directory = await mkdtemp(path.join(tmpdir(), 'bitcoin-python-'));
   try {
@@ -89,25 +115,26 @@ export async function runPython(
             throw new Error('Python geçerli bir sonuç üretmedi.');
           }
           if (result.error) throw new Error(String(result.error));
-          if (candles === null) {
+          if (expected === null) {
             if (result.ok !== true) throw new Error('Python kod kontrolü tamamlanamadı.');
-            resolve([]);
+            resolve({ signals: [], logs: '' });
           } else {
             if (
               !Array.isArray(result.signals) ||
-              result.signals.length !== candles.length ||
+              result.signals.length !== expected ||
               result.signals.some((s: unknown) => !['buy', 'sell', 'hold'].includes(s as string))
             )
               throw new Error('Python sinyalleri geçersiz.');
-            resolve(result.signals);
+            resolve({
+              signals: result.signals,
+              logs: typeof result.logs === 'string' ? result.logs : '',
+            });
           }
         } catch (error) {
           reject(error);
         }
       });
-      child.stdin.end(
-        JSON.stringify({ strategy, candles, mode: candles === null ? 'validate' : 'run' }),
-      );
+      child.stdin.end(JSON.stringify({ strategy, ...request }));
     });
   } finally {
     await rm(directory, { recursive: true, force: true });

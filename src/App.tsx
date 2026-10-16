@@ -9,7 +9,6 @@ import {
   BookOpen,
   Check,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Database,
   Download,
@@ -22,6 +21,7 @@ import {
   Menu,
   Play,
   Plus,
+  Radio,
   RefreshCw,
   Save,
   Settings2,
@@ -56,6 +56,8 @@ import { CustomStrategyEditor } from './components/CustomStrategyEditor';
 import { PythonStrategyEditor } from './components/PythonStrategyEditor';
 import { examplePython } from '../shared/python-strategy';
 import { BackupPanel } from './components/BackupPanel';
+import { PaperTrading } from './components/PaperTrading';
+import { TradeTable, tradesCsv } from './components/TradeTable';
 import {
   emptyWorkspace,
   mergeWorkspace,
@@ -64,12 +66,13 @@ import {
   type Workspace,
 } from '../shared/workspace';
 
-type Page = 'dashboard' | 'backtest' | 'strategies' | 'history' | 'data';
+type Page = 'dashboard' | 'backtest' | 'paper' | 'strategies' | 'history' | 'data';
 type Summary = Omit<Result, 'trades' | 'equity'> & { tradeCount: number };
 type Dataset = { interval: Interval; count: number; start: number; end: number };
 const navigation = [
   { id: 'dashboard', label: 'Genel Bakış', icon: LayoutDashboard },
   { id: 'backtest', label: 'Backtest Terminali', icon: FlaskConical },
+  { id: 'paper', label: 'Canlı Test', icon: Radio },
   { id: 'strategies', label: 'Stratejiler', icon: Layers3 },
   { id: 'history', label: 'Test Geçmişi', icon: History },
   { id: 'data', label: 'Veri Merkezi', icon: Database },
@@ -302,26 +305,7 @@ function App() {
   }
   function exportTrades() {
     if (!result) return;
-    download(
-      `bitcoin-lab-${result.id.slice(0, 8)}.csv`,
-      [
-        'ID,Giris UTC,Cikis UTC,Giris fiyati,Cikis fiyati,BTC miktari,Komisyon USDT,Net PnL USDT,Getiri %,Cikis nedeni',
-        ...result.trades.map((t) =>
-          [
-            t.id,
-            new Date(t.entryTime * 1000).toISOString(),
-            new Date(t.exitTime * 1000).toISOString(),
-            t.entry,
-            t.exit,
-            t.quantity,
-            t.fees,
-            t.pnl,
-            t.returnPct,
-            t.reason,
-          ].join(','),
-        ),
-      ].join('\n'),
-    );
+    download(`bitcoin-lab-${result.id.slice(0, 8)}.csv`, tradesCsv(result.trades));
     setToast('İşlem dökümü indirildi.');
   }
   function exportCandles() {
@@ -371,63 +355,57 @@ function App() {
       </div>
     </label>
   );
-  const strategyForm = (
-    <aside className="panel strategy-panel">
-      <div className="panel-heading">
-        <div className="heading-icon">
-          <SlidersHorizontal size={16} />
-          <h2>Strateji Yapılandırması</h2>
+  // Shared by the backtest terminal and paper trading; only the terminal has date fields.
+  const strategyFields = (dates: boolean) => (
+    <>
+      <label className="field">
+        <span>Strateji</span>
+        <div className="select-wrap">
+          <Layers3 size={15} />
+          <select
+            value={config.strategy}
+            onChange={(e) => {
+              const strategy = e.target.value as Strategy;
+              setConfig((c) => ({
+                ...c,
+                strategy,
+                ...(strategy === 'custom'
+                  ? { custom: c.custom ?? patternStrategy('engulfing') }
+                  : {}),
+                ...(strategy === 'python' ? { python: c.python ?? { ...examplePython } } : {}),
+              }));
+            }}
+          >
+            {Object.entries(strategyNames).map(([id, name]) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={14} />
         </div>
-        <span className="tiny-badge">SPOT</span>
-      </div>
-      <div className="form-body">
+      </label>
+      <div className="strategy-description">{descriptions[config.strategy]}</div>
+      <div className="form-grid">
         <label className="field">
-          <span>Strateji</span>
-          <div className="select-wrap">
-            <Layers3 size={15} />
-            <select
-              value={config.strategy}
-              onChange={(e) => {
-                const strategy = e.target.value as Strategy;
-                setConfig((c) => ({
-                  ...c,
-                  strategy,
-                  ...(strategy === 'custom'
-                    ? { custom: c.custom ?? patternStrategy('engulfing') }
-                    : {}),
-                  ...(strategy === 'python' ? { python: c.python ?? { ...examplePython } } : {}),
-                }));
-              }}
-            >
-              {Object.entries(strategyNames).map(([id, name]) => (
-                <option key={id} value={id}>
-                  {name}
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={14} />
+          <span>İşlem çifti</span>
+          <div className="static-input">
+            <span className="mini-bitcoin">₿</span> BTC / USDT <span className="muted">Spot</span>
           </div>
         </label>
-        <div className="strategy-description">{descriptions[config.strategy]}</div>
-        <div className="form-grid">
-          <label className="field">
-            <span>İşlem çifti</span>
-            <div className="static-input">
-              <span className="mini-bitcoin">₿</span> BTC / USDT <span className="muted">Spot</span>
-            </div>
-          </label>
-          <label className="field">
-            <span>Zaman dilimi</span>
-            <select
-              value={config.interval}
-              onChange={(e) => update('interval', e.target.value as Interval)}
-            >
-              {Object.keys(intervals).map((i) => (
-                <option key={i}>{i}</option>
-              ))}
-            </select>
-          </label>
-        </div>
+        <label className="field">
+          <span>Zaman dilimi</span>
+          <select
+            value={config.interval}
+            onChange={(e) => update('interval', e.target.value as Interval)}
+          >
+            {Object.keys(intervals).map((i) => (
+              <option key={i}>{i}</option>
+            ))}
+          </select>
+        </label>
+      </div>
+      {dates && (
         <div className="form-grid">
           <label className="field">
             <span>Başlangıç · UTC</span>
@@ -450,60 +428,71 @@ function App() {
             />
           </label>
         </div>
-        <div className="section-label">STRATEJİ PARAMETRELERİ</div>
-        <div
-          className={'form-grid' + (config.strategy === 'custom' ? ' custom-parameter-grid' : '')}
-        >
-          {config.strategy === 'python' ? (
-            <div className="custom-strategy-summary">
-              <span className="tiny-badge amber">PYTHON</span>
-              <strong>{config.python?.name ?? 'Python Stratejisi'}</strong>
-              <button className="secondary" onClick={() => setPythonEditor(true)}>
-                Python kodunu yükle / düzenle <ArrowRight size={14} />
-              </button>
-              <p className="python-notice">
-                Backtest kodu bilgisayarında çalıştırır. Yalnızca güvendiğin Python kodlarını
-                kullan.
-              </p>
-            </div>
-          ) : config.strategy === 'custom' ? (
-            <div className="custom-strategy-summary">
-              <span className="tiny-badge amber">MUM KURALLARI</span>
-              <strong>{config.custom?.name ?? 'Özel Mum Stratejisi'}</strong>
-              <p>
-                {config.custom?.entry.rules.length ?? 0} giriş ·{' '}
-                {config.custom?.exit.rules.length ?? 0} çıkış koşulu
-              </p>
-              <button className="secondary" onClick={editCustom}>
-                <SlidersHorizontal size={14} />
-                Mum kurallarını düzenle
-                <ArrowRight size={14} />
-              </button>
-            </div>
-          ) : config.strategy === 'sma' ? (
-            <>
-              {numberField('Hızlı ortalama', 'fast', 'mum', 2, 500, '1')}
-              {numberField('Yavaş ortalama', 'slow', 'mum', 3, 1000, '1')}
-            </>
-          ) : config.strategy === 'rsi' ? (
-            <>
-              {numberField('RSI periyodu', 'rsiPeriod', 'mum', 2, 200, '1')}
-              {numberField('Alım eşiği', 'rsiBuy', undefined, 1, 49)}
-              {numberField('Satım eşiği', 'rsiSell', undefined, 51, 99)}
-            </>
-          ) : (
-            numberField('Kanal periyodu', 'lookback', 'mum', 2, 500, '1')
-          )}
+      )}
+      <div className="section-label">STRATEJİ PARAMETRELERİ</div>
+      <div className={'form-grid' + (config.strategy === 'custom' ? ' custom-parameter-grid' : '')}>
+        {config.strategy === 'python' ? (
+          <div className="custom-strategy-summary">
+            <span className="tiny-badge amber">PYTHON</span>
+            <strong>{config.python?.name ?? 'Python Stratejisi'}</strong>
+            <button className="secondary" onClick={() => setPythonEditor(true)}>
+              Python kodunu yükle / düzenle <ArrowRight size={14} />
+            </button>
+            <p className="python-notice">
+              Backtest kodu bilgisayarında çalıştırır. Yalnızca güvendiğin Python kodlarını kullan.
+            </p>
+          </div>
+        ) : config.strategy === 'custom' ? (
+          <div className="custom-strategy-summary">
+            <span className="tiny-badge amber">MUM KURALLARI</span>
+            <strong>{config.custom?.name ?? 'Özel Mum Stratejisi'}</strong>
+            <p>
+              {config.custom?.entry.rules.length ?? 0} giriş ·{' '}
+              {config.custom?.exit.rules.length ?? 0} çıkış koşulu
+            </p>
+            <button className="secondary" onClick={editCustom}>
+              <SlidersHorizontal size={14} />
+              Mum kurallarını düzenle
+              <ArrowRight size={14} />
+            </button>
+          </div>
+        ) : config.strategy === 'sma' ? (
+          <>
+            {numberField('Hızlı ortalama', 'fast', 'mum', 2, 500, '1')}
+            {numberField('Yavaş ortalama', 'slow', 'mum', 3, 1000, '1')}
+          </>
+        ) : config.strategy === 'rsi' ? (
+          <>
+            {numberField('RSI periyodu', 'rsiPeriod', 'mum', 2, 200, '1')}
+            {numberField('Alım eşiği', 'rsiBuy', undefined, 1, 49)}
+            {numberField('Satım eşiği', 'rsiSell', undefined, 51, 99)}
+          </>
+        ) : (
+          numberField('Kanal periyodu', 'lookback', 'mum', 2, 500, '1')
+        )}
+      </div>
+      <div className="section-label">SERMAYE VE RİSK</div>
+      <div className="form-grid">
+        {numberField('Başlangıç sermayesi', 'capital', 'USDT', 10, 1e9)}
+        {numberField('Pozisyon büyüklüğü', 'allocation', '%', 1, 100)}
+        {numberField('Komisyon / yön', 'fee', '%', 0, 5)}
+        {numberField('Fiyat kayması / yön', 'slippage', '%', 0, 5)}
+        {numberField('Stop-loss', 'stopLoss', '%', 0, 90)}
+        {numberField('Take-profit', 'takeProfit', '%', 0, 1000)}
+      </div>
+    </>
+  );
+  const strategyForm = (
+    <aside className="panel strategy-panel">
+      <div className="panel-heading">
+        <div className="heading-icon">
+          <SlidersHorizontal size={16} />
+          <h2>Strateji Yapılandırması</h2>
         </div>
-        <div className="section-label">SERMAYE VE RİSK</div>
-        <div className="form-grid">
-          {numberField('Başlangıç sermayesi', 'capital', 'USDT', 10, 1e9)}
-          {numberField('Pozisyon büyüklüğü', 'allocation', '%', 1, 100)}
-          {numberField('Komisyon / yön', 'fee', '%', 0, 5)}
-          {numberField('Fiyat kayması / yön', 'slippage', '%', 0, 5)}
-          {numberField('Stop-loss', 'stopLoss', '%', 0, 90)}
-          {numberField('Take-profit', 'takeProfit', '%', 0, 1000)}
-        </div>
+        <span className="tiny-badge">SPOT</span>
+      </div>
+      <div className="form-body">
+        {strategyFields(true)}
         <div className="execution-note">
           <ShieldCheck size={14} />
           <span>Sonraki mumda işlem · Kaldıraçsız long</span>
@@ -541,6 +530,7 @@ function App() {
               {result.config.mode === 'demo' ? 'DEMO' : 'BINANCE'}
             </span>
           )}
+          {result?.paper && <PaperBadge kind={result.paper.kind} />}
         </div>
         <button
           className="icon-button"
@@ -570,7 +560,7 @@ function App() {
       {result ? (
         <>
           {tab === 'trades' ? (
-            <TradeTable result={result} page={tradePage} setPage={setTradePage} />
+            <TradeTable trades={result.trades} page={tradePage} setPage={setTradePage} />
           ) : (
             <EquityChart points={result.equity} drawdown={tab === 'drawdown'} />
           )}
@@ -580,6 +570,8 @@ function App() {
             {result.config.end} (UTC)
             {!!result.missingCandles &&
               ` · Binance'te bulunmayan ${result.missingCandles.toLocaleString('tr-TR')} mum (borsa kesintisi) atlandı`}
+            {result.paper &&
+              ` · Canlı test mumları: ısınma ${date(result.paper.warmupStart)} UTC'den, işlemler ${date(result.start)} UTC açılışından itibaren. Aynı tarihlerle terminalden yapılan backtest ısınmayı aralığın içinde yapar; sonuç farklı olabilir.`}
           </div>
           {result.config.strategy === 'custom' && result.config.custom && (
             <details className="report-rules">
@@ -751,9 +743,11 @@ function App() {
                       ? 'Bir sonraki stratejiniz burada başlıyor.'
                       : page === 'strategies'
                         ? 'Fikriniz. Kurallarınız. Stratejiniz.'
-                        : page === 'history'
-                          ? 'Her test, yeni bir içgörü.'
-                          : 'Araştırmanızın temeli: güvenilir veri.'}
+                        : page === 'paper'
+                          ? 'Stratejiniz canlı piyasada, sanal portföyle.'
+                          : page === 'history'
+                            ? 'Her test, yeni bir içgörü.'
+                            : 'Araştırmanızın temeli: güvenilir veri.'}
                 </h1>
                 <p>
                   {page === 'dashboard'
@@ -762,9 +756,11 @@ function App() {
                       ? 'Geçmiş veriler üzerinde deneyin, performansı ölçün ve sonuçları karşılaştırın.'
                       : page === 'strategies'
                         ? 'Hazır stratejilerle başlayın veya kaydettiğiniz parametrelerle araştırmaya devam edin.'
-                        : page === 'history'
-                          ? 'Kaydedilen raporları inceleyin ve stratejilerinizi yan yana karşılaştırın.'
-                          : 'Binance Spot verileri, yerel önbellek ve dışa aktarılabilir mum serileri.'}
+                        : page === 'paper'
+                          ? 'Gerçek zamanlı Binance mumlarında sanal işlem; gerçek emir ve API anahtarı yok.'
+                          : page === 'history'
+                            ? 'Kaydedilen raporları inceleyin ve stratejilerinizi yan yana karşılaştırın.'
+                            : 'Binance Spot verileri, yerel önbellek ve dışa aktarılabilir mum serileri.'}
                 </p>
               </div>
               <div className="heading-actions">
@@ -1059,6 +1055,16 @@ function App() {
               </div>
             </>
           )}
+          {page === 'paper' && (
+            <PaperTrading
+              fields={strategyFields(false)}
+              config={config}
+              mode={mode}
+              onOpenReport={openResult}
+              onToast={setToast}
+              onReportsChanged={refreshLists}
+            />
+          )}
           {page === 'strategies' && (
             <>
               <div className="section-title">
@@ -1259,6 +1265,7 @@ function App() {
                               >
                                 {h.source}
                               </span>
+                              {h.paper && <PaperBadge kind={h.paper.kind} />}
                             </td>
                             <td>
                               {h.config.interval}
@@ -1327,6 +1334,10 @@ function App() {
                               <strong>{strategyLabel(h.config)}</strong>
                               <small>
                                 {h.config.start} — {h.config.end} · {h.config.interval} · {h.source}
+                                {h.paper &&
+                                  (h.paper.kind === 'session'
+                                    ? ' · Canlı (paper)'
+                                    : ' · Karşılaştırma')}
                               </small>
                               <div>
                                 Net getiri{' '}
@@ -1883,6 +1894,13 @@ function App() {
     </div>
   );
 }
+function PaperBadge({ kind }: { kind: 'session' | 'comparison' }) {
+  return (
+    <span className="tiny-badge paper-badge">
+      {kind === 'session' ? 'CANLI (PAPER)' : 'KARŞILAŞTIRMA'}
+    </span>
+  );
+}
 function Metric({
   label,
   value,
@@ -1904,89 +1922,6 @@ function Metric({
       </div>
       <div className={'metric-value ' + color}>{value}</div>
       <div className="metric-sub">{sub}</div>
-    </div>
-  );
-}
-function TradeTable({
-  result,
-  page,
-  setPage,
-}: {
-  result: Result;
-  page: number;
-  setPage: (n: number) => void;
-}) {
-  const size = 7,
-    rows = result.trades.slice(page * size, (page + 1) * size);
-  return result.trades.length ? (
-    <>
-      <div className="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>İşlem</th>
-              <th>Giriş / Çıkış · UTC</th>
-              <th>Giriş / Çıkış Fiyatı</th>
-              <th>Net PnL</th>
-              <th>Çıkış</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((t) => (
-              <tr key={t.id}>
-                <td>
-                  <span className="long-tag">LONG</span>
-                  <small>#{String(t.id).padStart(3, '0')}</small>
-                </td>
-                <td>
-                  {date(t.entryTime)}
-                  <small>{date(t.exitTime)}</small>
-                </td>
-                <td>
-                  {money(t.entry)}
-                  <small>{money(t.exit)}</small>
-                </td>
-                <td className={t.pnl >= 0 ? 'positive' : 'negative'}>
-                  {t.pnl >= 0 ? '+' : ''}
-                  {money(t.pnl)}
-                  <small className={t.pnl >= 0 ? 'positive' : 'negative'}>{pct(t.returnPct)}</small>
-                </td>
-                <td>{t.reason}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="pagination">
-        <span>
-          {page * size + 1}–{Math.min((page + 1) * size, result.trades.length)} /{' '}
-          {result.trades.length} işlem
-        </span>
-        <div>
-          <button
-            className="icon-button"
-            disabled={!page}
-            onClick={() => setPage(page - 1)}
-            aria-label="Önceki sayfa"
-          >
-            <ChevronLeft size={17} />
-          </button>
-          <button
-            className="icon-button"
-            disabled={(page + 1) * size >= result.trades.length}
-            onClick={() => setPage(page + 1)}
-            aria-label="Sonraki sayfa"
-          >
-            <ChevronRight size={17} />
-          </button>
-        </div>
-      </div>
-    </>
-  ) : (
-    <div className="empty-state">
-      <Activity size={25} />
-      <h3>Bu aralıkta işlem sinyali oluşmadı.</h3>
-      <p>Tarih aralığını genişletin veya strateji parametrelerini değiştirin.</p>
     </div>
   );
 }

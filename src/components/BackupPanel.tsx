@@ -38,7 +38,7 @@ export function BackupPanel({
         'application/json',
       );
       setMessage(
-        `${backup.candles.length.toLocaleString('tr-TR')} mum, ${backup.backtests.length} rapor ve ${backup.workspace.presets.length} şablon dışa aktarıldı.`,
+        `${backup.candles.length.toLocaleString('tr-TR')} mum, ${backup.backtests.length} rapor, ${backup.workspace.presets.length} şablon ve ${backup.paperSessions?.length ?? 0} canlı test oturumu dışa aktarıldı.`,
       );
     } catch (e) {
       setError((e as Error).message);
@@ -82,7 +82,7 @@ export function BackupPanel({
       onImported(summary);
       setPending(null);
       setMessage(
-        `${summary.candlesAdded.toLocaleString('tr-TR')} mum, ${summary.reportsAdded} rapor ve ${summary.presetsAdded} şablon eklendi. Mevcut ${summary.candlesSkipped.toLocaleString('tr-TR')} mum ve ${summary.reportsSkipped} rapor korundu. Ayarlar yerel depoya kaydedildi.`,
+        `${summary.candlesAdded.toLocaleString('tr-TR')} mum, ${summary.reportsAdded} rapor, ${summary.presetsAdded} şablon ve ${summary.sessionsAdded} canlı test oturumu eklendi. Mevcut ${summary.candlesSkipped.toLocaleString('tr-TR')} mum ve ${summary.reportsSkipped} rapor korundu. Ayarlar yerel depoya kaydedildi.`,
       );
     } catch (e) {
       setError((e as Error).message);
@@ -101,9 +101,9 @@ export function BackupPanel({
       </div>
       <div className="backup-body">
         <p>
-          Mum verileri, tüm test raporları, özel mum kuralları, şablonlar ve varsayılan ayarlar
-          bilgisayarınızdaki SQLite dosyasında saklanır. Tek bir yedekle başka bilgisayardaki
-          Bitcoin Lab'a taşıyın.
+          Mum verileri, tüm test raporları, canlı test oturumları, özel mum kuralları, şablonlar ve
+          varsayılan ayarlar bilgisayarınızdaki SQLite dosyasında saklanır. Tek bir yedekle başka
+          bilgisayardaki Bitcoin Lab'a taşıyın.
         </p>
         <div className="backup-actions">
           <button className="secondary" disabled={disabled || busy} onClick={exportData}>
@@ -159,10 +159,14 @@ export function BackupPanel({
               <span>
                 <b>{pending.backup.workspace.presets.length}</b> şablon
               </span>
+              <span>
+                <b>{pending.backup.paperSessions?.length ?? 0}</b> canlı test
+              </span>
             </div>
             <p>
               Yeni kayıtlar eklenir; aynı zaman dilimi/tarihli mumlar ve aynı kimlikli raporlar
-              korunur. Şablonlar birleştirilir. Yedekteki varsayılan ayarlar uygulanır.
+              korunur. Şablonlar birleştirilir. Yedekteki varsayılan ayarlar uygulanır. Canlı test
+              oturumları durdurulmuş olarak eklenir; içe aktarma strateji kodu çalıştırmaz.
             </p>
             <button className="primary" disabled={disabled || busy} onClick={importData}>
               {busy ? <LoaderCircle size={15} className="spin" /> : <Upload size={15} />}İçe

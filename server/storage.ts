@@ -7,9 +7,17 @@ import {
   type Workspace,
 } from '../shared/workspace';
 import type { Result } from '../shared/types';
+import * as paperStore from './paper-store';
 db.exec(
   'CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL)',
 );
+export function saveReport(result: Result) {
+  db.prepare('INSERT INTO backtests VALUES(?,?,?)').run(
+    result.id,
+    result.createdAt,
+    JSON.stringify(result),
+  );
+}
 export function readWorkspace(): Workspace | null {
   const row = db.prepare('SELECT payload FROM workspace WHERE id=1').get() as
     { payload: string } | undefined;
@@ -35,6 +43,12 @@ export function exportBackup(): Backup {
       db.prepare('SELECT payload FROM backtests ORDER BY created_at').all() as { payload: string }[]
     ).map((row) => JSON.parse(row.payload) as Result),
     workspace: readWorkspace() ?? emptyWorkspace(),
+    paperSessions: paperStore.listSessions().map((session) => ({
+      session,
+      signals: paperStore.readSignals(session.id),
+      equity: paperStore.readEquity(session.id),
+      trades: paperStore.readTrades(session.id),
+    })),
   };
 }
 export function importBackup(input: unknown): ImportSummary {
@@ -47,6 +61,8 @@ export function importBackup(input: unknown): ImportSummary {
     reportsAdded: 0,
     reportsSkipped: 0,
     presetsAdded: workspace.presets.length - before.presets.length,
+    sessionsAdded: 0,
+    sessionsSkipped: 0,
     workspace,
   };
   const candle = db.prepare(
@@ -64,6 +80,26 @@ export function importBackup(input: unknown): ImportSummary {
       const { changes } = report.run(r.id, r.createdAt, JSON.stringify(r));
       if (changes) summary.reportsAdded++;
       else summary.reportsSkipped++;
+    }
+    for (const { session, signals, equity, trades } of input.paperSessions ?? []) {
+      if (paperStore.sessionExists(session.id)) {
+        summary.sessionsSkipped++;
+        continue;
+      }
+      // Importing must never run strategy code, so sessions arrive stopped.
+      const restored =
+        session.status === 'stopped'
+          ? session
+          : {
+              ...session,
+              status: 'stopped' as const,
+              stoppedAt: new Date().toISOString(),
+              stopReason:
+                'Yedekten içe aktarıldı; içe aktarılan oturumlar kendiliğinden devam etmez.',
+              clock: null,
+            };
+      paperStore.writeSessionRows(restored, { signals, equity, trades });
+      summary.sessionsAdded++;
     }
     writeWorkspace(workspace);
     db.exec('COMMIT');

@@ -8,6 +8,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   market.db.close();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
 });
@@ -84,6 +85,8 @@ describe('Historical data provider', () => {
     );
   });
   it.each(['1m', '1h'] as const)('excludes the currently forming %s candle', async (interval) => {
+    // A frozen clock: if the candle closed between these reads, it would rightly be included.
+    vi.useFakeTimers({ toFake: ['Date'] });
     const step = intervals[interval];
     const now = Math.floor(Date.now() / 1000 / step) * step;
     vi.stubGlobal(
