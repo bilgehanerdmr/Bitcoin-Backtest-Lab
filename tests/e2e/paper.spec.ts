@@ -63,7 +63,11 @@ test('runs a demo paper session, compares it with a backtest and saves the repor
   await page.locator('nav').getByRole('button', { name: 'Canlı Test', exact: true }).click();
   await expect(view.locator('.paper-status')).toHaveText('Durdu');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: 'test-results/paper-mobile.png', fullPage: true });
+  await page.screenshot({
+    path: 'test-results/paper-mobile.png',
+    fullPage: true,
+    animations: 'disabled',
+  });
   expect(errors).toEqual([]);
 });
 

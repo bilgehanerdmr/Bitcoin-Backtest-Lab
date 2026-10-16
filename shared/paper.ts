@@ -87,6 +87,8 @@ export function validatePaperStart(input: unknown): asserts input is PaperStart 
   const s = input as PaperStart;
   if (!s || typeof s !== 'object') throw new Error('Canlı test ayarları gerekli.');
   validateConfig(s.config);
+  if (s.config.dataset)
+    throw new Error('Canlı test yalnızca Binance verisiyle çalışır; yüklenen veri seti seçilemez.');
   const min = minWarmup(s.config);
   if (!Number.isInteger(s.warmup) || s.warmup < min || s.warmup > MAX_WARMUP)
     throw new Error(`Isınma mumu sayısı ${min}–${MAX_WARMUP} arasında bir tam sayı olmalı.`);

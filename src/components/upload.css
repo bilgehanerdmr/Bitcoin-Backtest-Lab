@@ -1,0 +1,115 @@
+.upload-panel {
+  margin-bottom: 20px;
+}
+.upload-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+}
+.upload-body > p {
+  margin: 0;
+  color: #969fb1;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.upload-choose {
+  position: relative;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+.upload-choose input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.upload-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 14px 16px;
+  background: #0e1218;
+  min-width: 0;
+}
+.upload-file {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.upload-settings,
+.upload-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+/* Overrides the text-input sizing that .field applies to every input. */
+.field.upload-check input {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin-top: 8px;
+  accent-color: var(--gold);
+}
+.upload-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  font-size: 11px;
+  color: #969fb1;
+}
+.upload-stats b {
+  color: #dfe4ec;
+  font-weight: 550;
+}
+.upload-warnings {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 11px;
+  line-height: 1.7;
+  color: #d8c79e;
+}
+.upload-skipped {
+  font-size: 11px;
+  color: #969fb1;
+}
+.upload-skipped ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  line-height: 1.7;
+}
+.upload-sample th,
+.upload-sample td {
+  padding: 8px 12px;
+}
+.upload-chart .price-chart {
+  height: 260px;
+}
+.upload-save {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.upload-save .field {
+  flex: 1 1 220px;
+}
+@media (max-width: 600px) {
+  .upload-body {
+    padding: 14px;
+  }
+  .upload-preview {
+    padding: 12px;
+  }
+  .upload-save > button {
+    flex: 1 1 100%;
+  }
+}

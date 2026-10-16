@@ -49,6 +49,7 @@ In this mode, both the interface and API are served at **http://127.0.0.1:3001**
 - SMA crossover, Wilder RSI mean reversion, and Donchian channel breakout strategies.
 - Custom candle strategy editor: price, body, wick, percentage, and volume conditions; separate entry/exit groups and reusable patterns.
 - Python Strategy Workshop: `.py` uploads, code editing, syntax checks, local templates, and backtests driven by Python signals.
+- Backtests on your own data: CSV uploads with automatic format detection, a quality report before import, and reports labelled with their source.
 - Paper trading (`Canlı Test`): runs built-in, custom candle, and Python strategies on live Binance candles with a virtual portfolio, using exactly the backtest calculation, with automatic reports and a side-by-side backtest comparison.
 - Capital, position allocation, entry/exit fees and slippage, stop-loss, and take-profit settings.
 - Net return, buy-and-hold benchmark, maximum drawdown, win rate, profit factor, annualized Sharpe, and total fees.
@@ -105,6 +106,32 @@ Charts use [TradingView Lightweight Charts™](https://www.tradingview.com/). Li
 
 Liquidity, partial fills, quantity/price increments, market impact, futures, and funding fees are not modelled. The application does not submit real orders. Historical results do not guarantee future performance.
 
+## Backtesting your own data
+
+Open **Data Center → Upload your own data** (`Veri Merkezi → Kendi Verini Yükle`) and click **Choose CSV file** (`CSV dosyası seç`). The file is read in the browser first and shown as a preview; nothing is stored until you click **Save dataset** (`Veri setini kaydet`). Files stay on your computer.
+
+### What is detected
+
+- **Separator:** comma, semicolon, or tab.
+- **Decimal mark:** point (`1234.56`) or comma, including Turkish Excel output with thousands dots (`1.234,56`).
+- **Header row and columns:** by English or Turkish names (`time/date/Tarih`, `open/Açılış`, `high/En Yüksek`, `low/En Düşük`, `close/Kapanış`, `volume/Hacim`). Files without a header are read in Binance kline order (time, open, high, low, close, volume), so Binance archive files work directly. Extra columns such as indicators are ignored.
+- **Time:** Unix seconds, milliseconds or microseconds (newer Binance archives), ISO 8601 dates with or without a time zone offset, and `d.m.yyyy hh:mm` dates. Times without a zone are taken as UTC, and the preview says so. Excel serial date numbers and slash dates are not read; convert them to one of these formats.
+
+Every detected setting and the column mapping can be changed in the preview, which then reads the file again. The preview shows the number of candles, the timeframe, the date range, missing candles, skipped rows with examples and line numbers, the first rows as parsed, and a chart.
+
+### Rules
+
+- Rows that cannot be read or whose prices are inconsistent (high/low not covering open and close, non-positive prices, negative volume) are skipped and reported; their times count as missing candles.
+- Exact duplicate rows are removed. Two different rows for the same time stop the import, since choosing one would change the data.
+- Rows are sorted by time. The most common spacing sets the timeframe; it must be one of 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, or 1d, and every other spacing must be a multiple of it. Weekly candles start on Mondays, which does not fit the engine's time grid, so they are not supported yet.
+- Missing candles are skipped by the backtest and reported as unverifiable gaps (`doğrulanamayan boşluk`), the same way Binance outages are skipped; nothing is filled in. A series does not have to start at midnight UTC (for example, daily candles opening at 21:00 UTC).
+- A file without a volume column is accepted with volume 0; volume conditions in candle rules then never match.
+- Limits: 50 MB and 1,000,000 rows per file, at least 3 valid candles. A single backtest still processes at most 50,000 candles.
+
+### Using a dataset
+
+Click **Use in backtest** (`Backtest'te kullan`) in the dataset list, or choose it under **Data source** (`Veri kaynağı`) in the Backtest Terminal. The timeframe then comes from the dataset, the dates are limited to its range (the latest 50,000 candles in whole days are preselected), and the chart and price cards show the dataset's last 1,000 candles. Reports are labelled **Uploaded data · name** (`Yüklenen veri · …`), and the footnote counts the dataset's missing candles. Deleting a dataset keeps the reports made from it. Paper trading always uses Binance data. Datasets are included in Data Center backups.
+
 ## Paper trading
 
 Open **Paper Trading** (`Canlı Test`), choose a strategy (built-in, custom candle, or Python), timeframe, capital and risk settings, and the number of warmup candles (`Isınma mumu`), then click **Start paper trading** (`Canlı testi başlat`). The strategy runs on real-time Binance BTC/USDT data on every closed candle, opens and closes virtual trades, and its report updates after each close. **No real orders are sent and no API key is used;** the portfolio is entirely virtual.
@@ -156,6 +183,7 @@ In demo mode, paper trading runs offline on deterministic synthetic candles and 
 - `data/bitcoin-lab.sqlite`: automatically created database for real candle caching and reports. Cached candles and confirmed exchange gaps are stored per trading pair (Binance USDT spot pairs; BTCUSDT today). A database from a version before pair support is converted once on startup: all existing candles are filed under BTCUSDT in a single transaction, with nothing removed. Demo candles are not stored in the real-data table; demo reports are saved with a source label.
 - `DATABASE_PATH`: alternative SQLite file path. Its parent directory must already exist.
 - Templates and preferences are stored in the same SQLite file's `workspace` table. Legacy `localStorage` templates are merged into SQLite on first load; old keys are removed after a successful save.
+- `shared/upload.ts`: CSV reading, format detection and the quality report, shared by the browser preview and the server. `server/uploads.ts` stores datasets in the `uploads` and `upload_candles` tables.
 - `server/paper.ts`, `server/paper-feed.ts`, `server/paper-store.ts`: paper trading sessions, the Binance kline stream, and the `paper_*` SQLite tables. `shared/paper.ts` holds the session model and validation.
 
 The application is a local workspace for one user, bound to `127.0.0.1`. It has no accounts, cloud synchronization, JavaScript code execution, or automatic parameter optimization. The Python runner is intended for trusted local code and is unsuitable for a public, multi-user deployment.
@@ -201,7 +229,7 @@ Python source code is included with templates and reports in **Data Center** (`V
 
 - **Test History** (`Test Geçmişi`): use a row's trash icon to delete one report, or select multiple checkboxes and click **Delete selected** (`Seçilenleri sil`). The confirmation dialog lists the selected reports. Candles, strategy templates, and previously downloaded backups are retained. Use **Load older reports** (`Daha eski raporları yükle`) to access reports beyond the first 100.
 - **Strategies → Your Saved Templates** (`Stratejiler → Kaydettiğiniz Şablonlar`): use the trash icon on a template card to remove it. Reports created from that template and candle data are retained.
-- **Data Center → Export all data** (`Veri Merkezi → Tüm verileri dışa aktar`): downloads the entire local store as a versioned JSON backup, including candles for all timeframes, all reports/trades/equity curves, paper trading sessions (signals, trades, equity curve, and strategy copy), custom strategy rules, templates, and risk defaults. Imported paper sessions arrive **stopped**, so importing never runs strategy code. Backups without paper sessions still open.
+- **Data Center → Export all data** (`Veri Merkezi → Tüm verileri dışa aktar`): downloads the entire local store as a versioned JSON backup, including candles for all timeframes, all reports/trades/equity curves, uploaded datasets, paper trading sessions (signals, trades, equity curve, and strategy copy), custom strategy rules, templates, and risk defaults. Imported paper sessions arrive **stopped**, so importing never runs strategy code. Backups without paper sessions still open.
 - On the other computer, copy this project's code and run `npm install` and `npm run dev`. Open the JSON file through **Data Center → Choose backup file** (`Veri Merkezi → Yedek dosyası seç`), review the content counts, and click **Start import** (`İçe aktarmayı başlat`).
 
 Imports write to the local SQLite database. Existing candles with the same timeframe and opening time, and existing reports with the same ID, are preserved. New records are added; templates with the same name and configuration are not duplicated. Defaults from the backup are applied. The entire file is validated first, then candles, reports, and workspace data are written in a single SQLite transaction; any error rolls back the whole import. Deleted reports can be restored by importing a backup created before deletion.
@@ -231,7 +259,7 @@ Browser end-to-end tests require Google Chrome:
 npm run test:e2e
 ```
 
-Tests cover demo backtests, report persistence, CSV downloads, template saving, comparisons, the demo paper trading stream (start, comparison, stop, Python logs, session limit), and mobile overflow checks. Screenshots are written to `test-results/`. Playwright starts its own development server on ports 5273 (interface) and 3101 (API), using a new SQLite file in a temporary directory; your `data/` files and backups are unaffected. Set `PLAYWRIGHT_BASE_URL` to test against a running server; records created by the tests will then remain in that server's database.
+Tests cover demo backtests, report persistence, CSV downloads, template saving, comparisons, the demo paper trading stream (start, comparison, stop, Python logs, session limit), uploading a Turkish Excel CSV and backtesting on it, and mobile overflow checks. Screenshots are written to `test-results/`. Playwright starts its own development server on ports 5273 (interface) and 3101 (API), using a new SQLite file in a temporary directory; your `data/` files and backups are unaffected. Set `PLAYWRIGHT_BASE_URL` to test against a running server; records created by the tests will then remain in that server's database.
 
 To test the real Binance connection and backtests with real market data separately:
 

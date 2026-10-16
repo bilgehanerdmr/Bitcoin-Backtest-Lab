@@ -1,6 +1,7 @@
 import {
   intervals,
   SYMBOL_PATTERN,
+  UUID_PATTERN,
   type Candle,
   type EquityPoint,
   type Interval,
@@ -10,6 +11,7 @@ import {
 import { validateConfig } from './engine';
 import { validateWorkspace, type Workspace } from './workspace';
 import type { PaperSession, PaperSignal } from './paper';
+import { UPLOAD_SOURCE_PREFIX, type UploadMeta } from './upload';
 export const MAX_BACKUP_BYTES = 100 * 1024 * 1024;
 export interface StoredCandle extends Candle {
   // Version 1 backups predate multi-coin support and hold only BTCUSDT without this field.
@@ -22,6 +24,10 @@ export interface PaperSessionBackup {
   equity: EquityPoint[];
   trades: Trade[];
 }
+export interface UploadBackup {
+  upload: UploadMeta;
+  candles: Candle[];
+}
 export interface Backup {
   format: 'bitcoin-lab-backup';
   // 2 records each candle's symbol. Older platform versions reject it rather than filing
@@ -33,6 +39,8 @@ export interface Backup {
   workspace: Workspace;
   // Added with paper trading; older backups have no sessions and stay valid.
   paperSessions?: PaperSessionBackup[];
+  // Uploaded datasets with their candles; absent in earlier backups.
+  uploads?: UploadBackup[];
 }
 export interface ImportSummary {
   candlesAdded: number;
@@ -42,11 +50,12 @@ export interface ImportSummary {
   presetsAdded: number;
   sessionsAdded: number;
   sessionsSkipped: number;
+  uploadsAdded: number;
+  uploadsSkipped: number;
   workspace: Workspace;
 }
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export function isReportId(id: unknown): id is string {
-  return typeof id === 'string' && uuid.test(id);
+  return typeof id === 'string' && UUID_PATTERN.test(id);
 }
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isDate = (v: unknown) => typeof v === 'string' && Number.isFinite(Date.parse(v));
@@ -65,7 +74,7 @@ function validateEquity(equity: EquityPoint[], step: number, start: number) {
       p.benchmark < 0 ||
       p.drawdown > 0 ||
       p.drawdown < -100 ||
-      p.time % step !== 0 ||
+      (p.time - start) % step !== 0 ||
       (i ? p.time <= equity[i - 1].time : p.time !== start)
     )
       fail('geçersiz sermaye eğrisi.');
@@ -191,6 +200,50 @@ function validatePaperSession(entry: PaperSessionBackup, ids: Set<string>) {
     validateTrades(entry.trades, step, entry.equity[0].time, entry.equity.at(-1)!.time);
   }
 }
+function validateUpload(entry: UploadBackup, ids: Set<string>) {
+  const u = entry?.upload,
+    c = entry?.candles,
+    invalid = (): never => fail('geçersiz yüklenen veri seti.');
+  if (
+    !u ||
+    !isReportId(u.id) ||
+    ids.has(u.id) ||
+    typeof u.name !== 'string' ||
+    !u.name.trim() ||
+    u.name.length > 60 ||
+    typeof u.fileName !== 'string' ||
+    u.fileName.length > 200 ||
+    !isDate(u.createdAt) ||
+    !Object.hasOwn(intervals, u.interval) ||
+    typeof u.hasVolume !== 'boolean' ||
+    !Array.isArray(c) ||
+    c.length < 3 ||
+    u.count !== c.length
+  )
+    invalid();
+  ids.add(u.id);
+  const step = intervals[u.interval];
+  c.forEach((b, i) => {
+    if (
+      !b ||
+      ![b.time, b.open, b.high, b.low, b.close, b.volume].every(finite) ||
+      !Number.isInteger(b.time) ||
+      b.low <= 0 ||
+      b.volume < 0 ||
+      b.high < Math.max(b.open, b.close) ||
+      b.low > Math.min(b.open, b.close) ||
+      (b.time - c[0].time) % step !== 0 ||
+      (i && b.time <= c[i - 1].time)
+    )
+      invalid();
+  });
+  if (
+    u.start !== c[0].time ||
+    u.end !== c.at(-1)!.time ||
+    u.missing !== (u.end - u.start) / step + 1 - c.length
+  )
+    invalid();
+}
 export function validateBackup(input: unknown): asserts input is Backup {
   const b = input as Backup;
   if (!b || b.format !== 'bitcoin-lab-backup' || (b.version !== 1 && b.version !== 2))
@@ -247,7 +300,11 @@ export function validateBackup(input: unknown): asserts input is Backup {
       !finite(r.start) ||
       !finite(r.end) ||
       r.end < r.start ||
-      r.source !== (r.config.mode === 'demo' ? 'Sentetik demo' : 'Binance Spot')
+      (r.config.dataset
+        ? typeof r.source !== 'string' ||
+          !r.source.startsWith(UPLOAD_SOURCE_PREFIX) ||
+          r.source.length > 100
+        : r.source !== (r.config.mode === 'demo' ? 'Sentetik demo' : 'Binance Spot'))
     )
       fail('rapor veri yapısı geçersiz.');
     const step = intervals[r.config.interval];
@@ -273,6 +330,17 @@ export function validateBackup(input: unknown): asserts input is Backup {
       Math.abs(r.metrics.finalEquity - r.config.capital - r.metrics.netProfit) > 1e-6
     )
       fail('sermaye toplamları tutarsız.');
+  }
+  if (b.uploads !== undefined) {
+    if (
+      !Array.isArray(b.uploads) ||
+      b.uploads.length > 1000 ||
+      b.uploads.reduce((n, u) => n + (Array.isArray(u?.candles) ? u.candles.length : 0), 0) >
+        1000000
+    )
+      fail('veri seti listesi geçersiz ya da sınırı aşıyor.');
+    const uploadIds = new Set<string>();
+    for (const entry of b.uploads) validateUpload(entry, uploadIds);
   }
   if (b.paperSessions !== undefined) {
     if (!Array.isArray(b.paperSessions) || b.paperSessions.length > 1000)

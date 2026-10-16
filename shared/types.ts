@@ -1,17 +1,29 @@
+// Fixed-length candles that divide a day, so every series sits on one time grid. Weekly
+// candles open on Mondays and do not, so they are left out.
 export const intervals = {
   '1m': 60,
+  '3m': 180,
   '5m': 300,
   '15m': 900,
+  '30m': 1800,
   '1h': 3600,
+  '2h': 7200,
   '4h': 14400,
+  '6h': 21600,
+  '8h': 28800,
+  '12h': 43200,
   '1d': 86400,
 } as const;
 export type Interval = keyof typeof intervals;
+// Timeframes offered for Binance data in the interface; uploaded data may use any of the above.
+export const marketIntervals = ['1m', '5m', '15m', '1h', '4h', '1d'] as const;
 // First BTCUSDT kline on Binance Spot; earlier live ranges have no data at all.
 export const LIVE_DATA_START = '2017-08-17';
 // Binance USDT spot pairs only, e.g. BTCUSDT, 1000SATSUSDT.
 export const DEFAULT_SYMBOL = 'BTCUSDT';
 export const SYMBOL_PATTERN = /^[A-Z0-9]{1,20}USDT$/;
+export const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 // Configs saved before multi-coin support have no symbol; they all used BTCUSDT.
 export const symbolOf = (c: { symbol?: string }) => c.symbol ?? DEFAULT_SYMBOL;
 export type Mode = 'live' | 'demo';
@@ -27,6 +39,8 @@ export interface Candle {
 export interface Config {
   strategy: Strategy;
   symbol?: string;
+  // Id of an uploaded dataset; when set, candles come from it instead of Binance.
+  dataset?: string;
   custom?: CustomStrategy;
   python?: import('./python-strategy').PythonStrategy;
   interval: Interval;

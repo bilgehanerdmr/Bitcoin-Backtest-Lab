@@ -29,10 +29,20 @@ interface Props {
   candles: Candle[];
   interval: Interval;
   mode: Mode;
+  // Names the preview's data when it is not the Binance chart (an uploaded dataset).
+  sourceLabel?: string;
   onApply: (value: CustomStrategy) => void;
   onClose: () => void;
 }
-export function CustomStrategyEditor({ value, candles, interval, mode, onApply, onClose }: Props) {
+export function CustomStrategyEditor({
+  value,
+  candles,
+  interval,
+  mode,
+  sourceLabel,
+  onApply,
+  onClose,
+}: Props) {
   const [draft, setDraft] = useState(() => structuredClone(value)),
     [error, setError] = useState('');
   const dialog = useRef<HTMLElement>(null);
@@ -167,7 +177,7 @@ export function CustomStrategyEditor({ value, candles, interval, mode, onApply, 
             <div>
               <strong>Grafikteki kapanmış mumlarda önizleme</strong>
               <span>
-                {interval} · {mode === 'demo' ? 'Sentetik demo' : 'Binance Spot'} ·{' '}
+                {interval} · {sourceLabel ?? (mode === 'demo' ? 'Sentetik demo' : 'Binance Spot')} ·{' '}
                 {preview?.count ?? 0} değerlendirilebilir mum
               </span>
             </div>

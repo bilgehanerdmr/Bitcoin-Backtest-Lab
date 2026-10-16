@@ -43,6 +43,10 @@ On 13 September 2026, the existing unit suite passed **78 tests across 6 files**
 
 The model does not simulate order-book liquidity, partial fills, market impact, funding or short borrowing. OHLCV data cannot establish the exact intrabar path. The reported annualized Sharpe uses bar returns and is descriptive, not a significance test. Repeated strategy selection on the same data is not independent out-of-sample validation.
 
+## Uploaded data
+
+Users can backtest on their own OHLCV CSV files. `shared/upload.ts` detects the separator, decimal mark (including Turkish Excel's `1.234,56`), header, columns and time format (Unix s/ms/µs, ISO 8601, `d.m.yyyy`). It produces a quality report before anything is stored: skipped rows with line numbers, removed exact duplicates, and missing candles. Conflicting duplicates and irregular spacing are errors rather than silent choices. Missing candles are skipped and counted, never filled in. The same parser runs in the browser preview and on the server, which stores what it reads. Reports carry the dataset's name as their source. Tests are in `tests/upload.test.ts` and `tests/uploads.test.ts`.
+
 ## Paper trading
 
 The **Canlı Test** tab runs a built-in, custom candle, or Python strategy on live Binance BTC/USDT candles with a virtual portfolio. No orders are sent and no API key is used.

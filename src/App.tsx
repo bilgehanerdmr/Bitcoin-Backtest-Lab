@@ -39,9 +39,11 @@ import {
   defaultConfig,
   intervals,
   LIVE_DATA_START,
+  marketIntervals,
   strategyNames,
   strategyLabel,
   symbolOf,
+  type Candle,
   type Config,
   type Interval,
   type Mode,
@@ -58,6 +60,9 @@ import { PythonStrategyEditor } from './components/PythonStrategyEditor';
 import { examplePython } from '../shared/python-strategy';
 import { BackupPanel } from './components/BackupPanel';
 import { PaperTrading } from './components/PaperTrading';
+import { UploadPanel } from './components/UploadPanel';
+import type { UploadMeta } from '../shared/upload';
+import { utcDate } from '../shared/paper';
 import { TradeTable, tradesCsv } from './components/TradeTable';
 import {
   emptyWorkspace,
@@ -109,6 +114,8 @@ function App() {
     [toast, setToast] = useState(''),
     [history, setHistory] = useState<Summary[]>([]),
     [datasets, setDatasets] = useState<Dataset[]>([]),
+    [uploads, setUploads] = useState<UploadMeta[]>([]),
+    [uploadCandles, setUploadCandles] = useState<Candle[]>([]),
     [tab, setTab] = useState<'equity' | 'drawdown' | 'trades'>('equity'),
     [modal, setModal] = useState<'settings' | 'help' | 'save' | null>(null),
     [customEditor, setCustomEditor] = useState(false),
@@ -134,9 +141,52 @@ function App() {
     ticker = market.ticker,
     price = ticker ? +ticker.lastPrice : null,
     change = ticker ? +ticker.priceChangePercent : 0;
+  // An uploaded dataset replaces Binance as the terminal's data: chart, prices and backtests.
+  const upload = config.dataset ? (uploads.find((u) => u.id === config.dataset) ?? null) : null,
+    chartCandles = upload ? uploadCandles : market.candles;
+  useEffect(() => {
+    if (!config.dataset) {
+      setUploadCandles([]);
+      return;
+    }
+    let active = true;
+    api<Candle[]>(`/uploads/${config.dataset}/candles?last=1000`)
+      .then((c) => active && setUploadCandles(c))
+      .catch((e: Error) => active && setError(e.message));
+    return () => {
+      active = false;
+    };
+  }, [config.dataset]);
+  function selectSource(id: string) {
+    const u = uploads.find((x) => x.id === id);
+    setConfig((c) => {
+      if (!u)
+        return {
+          ...c,
+          dataset: undefined,
+          interval: (marketIntervals as readonly string[]).includes(c.interval) ? c.interval : '1h',
+        };
+      // Whole UTC days, kept within the 50,000-candle limit of one test.
+      const days = Math.floor((50000 * intervals[u.interval] + 1) / 86400),
+        last = Math.floor(u.end / 86400) * 86400,
+        first = Math.max(Math.floor(u.start / 86400) * 86400, last - (days - 1) * 86400);
+      return {
+        ...c,
+        dataset: u.id,
+        interval: u.interval,
+        start: utcDate(first),
+        end: utcDate(last),
+      };
+    });
+  }
   const refreshLists = async () => {
     try {
-      const [h, d] = await Promise.all([api<Summary[]>('/backtests'), api<Dataset[]>('/datasets')]);
+      const [h, d, u] = await Promise.all([
+        api<Summary[]>('/backtests'),
+        api<Dataset[]>('/datasets'),
+        api<UploadMeta[]>('/uploads'),
+      ]);
+      setUploads(u);
       setHistory(h);
       setCompare((old) => old.filter((id) => h.some((r) => r.id === id)));
       setHasMoreReports(h.length === 100);
@@ -196,7 +246,8 @@ function App() {
     setMobile(false);
   }
   function editCustom() {
-    setInterval(config.interval);
+    if ((marketIntervals as readonly string[]).includes(config.interval))
+      setInterval(config.interval);
     setCustomEditor(true);
   }
   async function saveWorkspace(next: Workspace) {
@@ -312,10 +363,12 @@ function App() {
   }
   function exportCandles() {
     download(
-      `${symbolOf(config)}-${interval}-${mode}.csv`,
+      upload
+        ? `${upload.name}-${upload.interval}.csv`
+        : `${symbolOf(config)}-${interval}-${mode}.csv`,
       [
         'time,open,high,low,close,volume',
-        ...market.candles.map((b) =>
+        ...chartCandles.map((b) =>
           [new Date(b.time * 1000).toISOString(), b.open, b.high, b.low, b.close, b.volume].join(
             ',',
           ),
@@ -323,7 +376,7 @@ function App() {
       ].join('\n'),
     );
   }
-  const last = market.candles.at(-1),
+  const last = chartCandles.at(-1),
     statusLabel =
       mode === 'demo'
         ? 'DEMO VERİSİ'
@@ -357,9 +410,26 @@ function App() {
       </div>
     </label>
   );
-  // Shared by the backtest terminal and paper trading; only the terminal has date fields.
-  const strategyFields = (dates: boolean) => (
+  // Shared by the backtest terminal and paper trading. Only the terminal has dates and can use
+  // uploaded data; paper trading always runs on Binance.
+  const strategyFields = (terminal: boolean) => (
     <>
+      {terminal && (
+        <label className="field">
+          <span>Veri kaynağı</span>
+          <select value={config.dataset ?? ''} onChange={(e) => selectSource(e.target.value)}>
+            <option value="">Binance · {pairLabel(symbolOf(config))} (canlı veri)</option>
+            {uploads.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name} · {u.interval} (yüklenen)
+              </option>
+            ))}
+            {config.dataset && !upload && (
+              <option value={config.dataset}>Silinmiş veri seti</option>
+            )}
+          </select>
+        </label>
+      )}
       <label className="field">
         <span>Strateji</span>
         <div className="select-wrap">
@@ -390,31 +460,56 @@ function App() {
       <div className="strategy-description">{descriptions[config.strategy]}</div>
       <div className="form-grid">
         <label className="field">
-          <span>İşlem çifti</span>
+          <span>{terminal && upload ? 'Veri' : 'İşlem çifti'}</span>
           <div className="static-input">
-            <span className="mini-bitcoin">₿</span> BTC / USDT <span className="muted">Spot</span>
+            {terminal && upload ? (
+              <>
+                {upload.name} <span className="muted">Yüklenen</span>
+              </>
+            ) : (
+              <>
+                <span className="mini-bitcoin">₿</span> BTC / USDT{' '}
+                <span className="muted">Spot</span>
+              </>
+            )}
           </div>
         </label>
         <label className="field">
           <span>Zaman dilimi</span>
           <select
             value={config.interval}
+            disabled={terminal && !!upload}
+            title={terminal && upload ? 'Zaman dilimi veri setinden gelir.' : undefined}
             onChange={(e) => update('interval', e.target.value as Interval)}
           >
-            {Object.keys(intervals).map((i) => (
+            {(terminal && upload
+              ? [upload.interval]
+              : [
+                  ...marketIntervals,
+                  ...((marketIntervals as readonly string[]).includes(config.interval)
+                    ? []
+                    : [config.interval]),
+                ]
+            ).map((i) => (
               <option key={i}>{i}</option>
             ))}
           </select>
         </label>
       </div>
-      {dates && (
+      {terminal && (
         <div className="form-grid">
           <label className="field">
             <span>Başlangıç · UTC</span>
             <input
               type="date"
               value={config.start}
-              min={mode === 'live' && symbolOf(config) === 'BTCUSDT' ? LIVE_DATA_START : undefined}
+              min={
+                upload
+                  ? utcDate(upload.start)
+                  : mode === 'live' && symbolOf(config) === 'BTCUSDT'
+                    ? LIVE_DATA_START
+                    : undefined
+              }
               max={config.end}
               onChange={(e) => update('start', e.target.value)}
             />
@@ -425,7 +520,7 @@ function App() {
               type="date"
               value={config.end}
               min={config.start}
-              max={new Date().toISOString().slice(0, 10)}
+              max={upload ? utcDate(upload.end) : new Date().toISOString().slice(0, 10)}
               onChange={(e) => update('end', e.target.value)}
             />
           </label>
@@ -529,7 +624,11 @@ function App() {
           <h2>Performans Analizi</h2>
           {result && (
             <span className={'tiny-badge ' + (result.config.mode === 'demo' ? 'amber' : '')}>
-              {result.config.mode === 'demo' ? 'DEMO' : 'BINANCE'}
+              {result.config.dataset
+                ? 'YÜKLENEN VERİ'
+                : result.config.mode === 'demo'
+                  ? 'DEMO'
+                  : 'BINANCE'}
             </span>
           )}
           {result?.paper && <PaperBadge kind={result.paper.kind} />}
@@ -571,7 +670,10 @@ function App() {
             {result.candleCount.toLocaleString('tr-TR')} kapanmış mum · {result.config.start} →{' '}
             {result.config.end} (UTC)
             {!!result.missingCandles &&
-              ` · Binance'te bulunmayan ${result.missingCandles.toLocaleString('tr-TR')} mum (borsa kesintisi) atlandı`}
+              (result.config.dataset
+                ? ` · Veri dosyasında bulunmayan ${result.missingCandles.toLocaleString('tr-TR')} mum (doğrulanamayan boşluk) atlandı`
+                : ` · Binance'te bulunmayan ${result.missingCandles.toLocaleString('tr-TR')} mum (borsa kesintisi) atlandı`)}
+            {result.config.dataset && ` · Kaynak: ${result.source}`}
             {result.paper &&
               ` · Canlı test mumları: ısınma ${date(result.paper.warmupStart)} UTC'den, işlemler ${date(result.start)} UTC açılışından itibaren. Aynı tarihlerle terminalden yapılan backtest ısınmayı aralığın içinde yapar; sonuç farklı olabilir.`}
           </div>
@@ -820,57 +922,112 @@ function App() {
           )}
           {(page === 'dashboard' || page === 'backtest') && (
             <>
-              <div className="market-metrics">
-                <div className="metric-card price-metric">
-                  <div className="metric-label">
-                    <span className="coin-icon">
-                      <Bitcoin size={19} />
-                    </span>
-                    <span>
-                      Bitcoin <span className="muted">BTC / USDT</span>
-                    </span>
-                    <span className="tiny-badge">SPOT</span>
-                  </div>
-                  <div className="metric-value">
-                    {price !== null ? '$' + money(price) : '—'}
-                    <span className={'change-pill ' + (change >= 0 ? 'positive' : 'negative')}>
-                      {price !== null ? (
-                        <>
-                          {change >= 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}{' '}
-                          {pct(change)}
-                        </>
-                      ) : (
-                        'Bekleniyor'
+              {upload ? (
+                <div className="market-metrics">
+                  <div className="metric-card price-metric">
+                    <div className="metric-label">
+                      <span>{upload.name}</span>
+                      <span className="tiny-badge amber">YÜKLENEN</span>
+                    </div>
+                    <div className="metric-value">
+                      {last ? money(last.close) : '—'}
+                      {last && chartCandles.length > 1 && (
+                        <span
+                          className={
+                            'change-pill ' +
+                            (last.close >= chartCandles[0].close ? 'positive' : 'negative')
+                          }
+                        >
+                          {pct((last.close / chartCandles[0].close - 1) * 100)}
+                        </span>
                       )}
-                    </span>
+                    </div>
+                    <div className="metric-sub">
+                      {last ? `Son mum ${date(last.time)} UTC` : 'Veri seti yükleniyor'}
+                    </div>
                   </div>
-                  <div className="metric-sub">
-                    {mode === 'demo'
-                      ? 'Sentetik fiyat · Demo'
-                      : market.updated
-                        ? 'Son veri: ' + new Date(market.updated).toLocaleTimeString('tr-TR')
-                        : 'Canlı piyasa verisine bağlanılıyor'}
-                  </div>
+                  <Metric
+                    label="Aralıktaki En Yüksek"
+                    value={
+                      chartCandles.length
+                        ? money(Math.max(...chartCandles.map((b) => b.high)))
+                        : '—'
+                    }
+                    sub={`Grafikteki son ${chartCandles.length.toLocaleString('tr-TR')} mum`}
+                    icon={<ArrowUpRight size={15} />}
+                  />
+                  <Metric
+                    label="Aralıktaki En Düşük"
+                    value={
+                      chartCandles.length ? money(Math.min(...chartCandles.map((b) => b.low))) : '—'
+                    }
+                    sub={`Grafikteki son ${chartCandles.length.toLocaleString('tr-TR')} mum`}
+                    icon={<ArrowDownRight size={15} />}
+                  />
+                  <Metric
+                    label="Veri Seti"
+                    value={upload.count.toLocaleString('tr-TR') + ' mum'}
+                    sub={`${upload.interval} · ${date(upload.start)} → ${date(upload.end)}`}
+                    icon={<Database size={15} />}
+                  />
                 </div>
-                <Metric
-                  label="24s En Yüksek"
-                  value={ticker ? '$' + money(+ticker.highPrice) : '—'}
-                  sub="Son 24 saatin zirvesi"
-                  icon={<ArrowUpRight size={15} />}
-                />
-                <Metric
-                  label="24s En Düşük"
-                  value={ticker ? '$' + money(+ticker.lowPrice) : '—'}
-                  sub="Son 24 saatin tabanı"
-                  icon={<ArrowDownRight size={15} />}
-                />
-                <Metric
-                  label="24s İşlem Hacmi"
-                  value={ticker ? '$' + money(+ticker.quoteVolume / 1e9, 3) + 'B' : '—'}
-                  sub={mode === 'demo' ? 'Örnek hacim' : 'Binance · BTC/USDT'}
-                  icon={<BarChart3 size={15} />}
-                />
-              </div>
+              ) : (
+                <div className="market-metrics">
+                  <div className="metric-card price-metric">
+                    <div className="metric-label">
+                      <span className="coin-icon">
+                        <Bitcoin size={19} />
+                      </span>
+                      <span>
+                        Bitcoin <span className="muted">BTC / USDT</span>
+                      </span>
+                      <span className="tiny-badge">SPOT</span>
+                    </div>
+                    <div className="metric-value">
+                      {price !== null ? '$' + money(price) : '—'}
+                      <span className={'change-pill ' + (change >= 0 ? 'positive' : 'negative')}>
+                        {price !== null ? (
+                          <>
+                            {change >= 0 ? (
+                              <ArrowUpRight size={13} />
+                            ) : (
+                              <ArrowDownRight size={13} />
+                            )}{' '}
+                            {pct(change)}
+                          </>
+                        ) : (
+                          'Bekleniyor'
+                        )}
+                      </span>
+                    </div>
+                    <div className="metric-sub">
+                      {mode === 'demo'
+                        ? 'Sentetik fiyat · Demo'
+                        : market.updated
+                          ? 'Son veri: ' + new Date(market.updated).toLocaleTimeString('tr-TR')
+                          : 'Canlı piyasa verisine bağlanılıyor'}
+                    </div>
+                  </div>
+                  <Metric
+                    label="24s En Yüksek"
+                    value={ticker ? '$' + money(+ticker.highPrice) : '—'}
+                    sub="Son 24 saatin zirvesi"
+                    icon={<ArrowUpRight size={15} />}
+                  />
+                  <Metric
+                    label="24s En Düşük"
+                    value={ticker ? '$' + money(+ticker.lowPrice) : '—'}
+                    sub="Son 24 saatin tabanı"
+                    icon={<ArrowDownRight size={15} />}
+                  />
+                  <Metric
+                    label="24s İşlem Hacmi"
+                    value={ticker ? '$' + money(+ticker.quoteVolume / 1e9, 3) + 'B' : '—'}
+                    sub={mode === 'demo' ? 'Örnek hacim' : 'Binance · BTC/USDT'}
+                    icon={<BarChart3 size={15} />}
+                  />
+                </div>
+              )}
               {result && (
                 <div className="performance-metrics">
                   <Metric
@@ -918,9 +1075,13 @@ function App() {
                         <span className="coin-icon small-coin">
                           <Bitcoin size={16} />
                         </span>
-                        <h2>BTC / USDT</h2>
-                        <span className="muted chart-exchange">Binance</span>
-                        <span className="tiny-badge">{mode === 'demo' ? 'DEMO' : 'SPOT'}</span>
+                        <h2>{upload ? upload.name : 'BTC / USDT'}</h2>
+                        <span className="muted chart-exchange">
+                          {upload ? 'Yüklenen veri' : 'Binance'}
+                        </span>
+                        <span className="tiny-badge">
+                          {upload ? 'VERİ SETİ' : mode === 'demo' ? 'DEMO' : 'SPOT'}
+                        </span>
                       </div>
                       <div className="chart-actions">
                         <button
@@ -933,7 +1094,7 @@ function App() {
                         </button>
                         <button
                           className="icon-button"
-                          disabled={!market.candles.length}
+                          disabled={!chartCandles.length}
                           onClick={exportCandles}
                           aria-label="Grafik verisini indir"
                         >
@@ -950,15 +1111,21 @@ function App() {
                     </div>
                     <div className="chart-toolbar">
                       <div className="timeframes">
-                        {Object.keys(intervals).map((i) => (
-                          <button
-                            key={i}
-                            className={interval === i ? 'active' : ''}
-                            onClick={() => setInterval(i as Interval)}
-                          >
-                            {i}
+                        {upload ? (
+                          <button className="active" title="Zaman dilimi veri setinden gelir.">
+                            {upload.interval}
                           </button>
-                        ))}
+                        ) : (
+                          marketIntervals.map((i) => (
+                            <button
+                              key={i}
+                              className={interval === i ? 'active' : ''}
+                              onClick={() => setInterval(i)}
+                            >
+                              {i}
+                            </button>
+                          ))
+                        )}
                       </div>
                       <span className="chart-type">
                         <Activity size={13} /> Mum grafiği
@@ -985,17 +1152,23 @@ function App() {
                           </span>
                         </>
                       ) : (
-                        <span>BTC / USDT piyasa verisi bekleniyor</span>
+                        <span>
+                          {upload ? 'Veri seti yükleniyor' : 'BTC / USDT piyasa verisi bekleniyor'}
+                        </span>
                       )}
                     </div>
-                    {market.candles.length ? (
+                    {chartCandles.length ? (
                       <PriceChart
-                        key={interval + mode}
-                        candles={market.candles}
+                        key={upload ? upload.id : interval + mode}
+                        candles={chartCandles}
                         indicators={indicators}
                         fast={config.fast}
                         slow={config.slow}
                       />
+                    ) : upload ? (
+                      <div className="chart-loading">
+                        <LoaderCircle className="spin" size={28} />
+                      </div>
                     ) : (
                       <div className="chart-loading">
                         <Activity size={32} />
@@ -1031,7 +1204,7 @@ function App() {
                         </span>
                       </div>
                       <span>
-                        {market.candles.length} mum{' '}
+                        {chartCandles.length} mum{' '}
                         <span className="muted">· Kaydır ve yakınlaştır</span>
                       </span>
                     </div>
@@ -1377,6 +1550,16 @@ function App() {
           )}
           {page === 'data' && (
             <>
+              <UploadPanel
+                uploads={uploads}
+                onChanged={refreshLists}
+                onToast={setToast}
+                onUse={(u) => {
+                  selectSource(u.id);
+                  go('backtest');
+                  setToast(`“${u.name}” Backtest Terminali'nde veri kaynağı olarak seçildi.`);
+                }}
+              />
               <BackupPanel
                 disabled={running || workspaceSaving || !workspaceReady}
                 onImported={(summary) => {
@@ -1449,7 +1632,7 @@ function App() {
               </div>
               <section className="panel">
                 <div className="panel-heading">
-                  <h2>Önbellekteki Veri Setleri</h2>
+                  <h2>Binance Mum Önbelleği</h2>
                   <button
                     className="icon-button"
                     onClick={refreshLists}
@@ -1687,8 +1870,9 @@ function App() {
       {customEditor && (
         <CustomStrategyEditor
           value={config.custom ?? patternStrategy('engulfing')}
-          candles={market.candles}
-          interval={interval}
+          candles={chartCandles}
+          interval={upload ? upload.interval : interval}
+          sourceLabel={upload ? 'Yüklenen veri · ' + upload.name : undefined}
           mode={mode}
           onClose={() => setCustomEditor(false)}
           onApply={(custom) => {

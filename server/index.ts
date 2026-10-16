@@ -15,7 +15,16 @@ import {
 } from '../shared/types';
 import { runPython } from './python';
 import { localAccess } from './local-access';
-import { errorHandler } from './errors';
+import { errorHandler, HttpError } from './errors';
+import {
+  createUpload,
+  deleteUpload,
+  latestUploadCandles,
+  listUploads,
+  readUpload,
+  uploadCandles,
+} from './uploads';
+import { uploadSource } from '../shared/upload';
 import { createPaperManager } from './paper';
 import {
   deleteReports,
@@ -32,6 +41,14 @@ app.post('/api/backup/import', express.json({ limit: '100mb' }), (req, res, next
   try {
     res.setHeader('Cache-Control', 'no-store');
     res.json(importBackup(req.body));
+  } catch (e) {
+    next(e);
+  }
+});
+// A CSV of up to 50 MB arrives as JSON text, so this route parses larger bodies.
+app.post('/api/uploads', express.json({ limit: '64mb' }), (req, res, next) => {
+  try {
+    res.json(createUpload(req.body));
   } catch (e) {
     next(e);
   }
@@ -96,6 +113,26 @@ app.get('/api/datasets', (_req, res) =>
       .all(),
   ),
 );
+app.get('/api/uploads', (_req, res) => res.json(listUploads()));
+app.get('/api/uploads/:id/candles', (req, res, next) => {
+  try {
+    if (!readUpload(req.params.id)) throw new HttpError(404, 'Veri seti bulunamadı.');
+    const last = Number(req.query.last ?? 1000);
+    if (!Number.isInteger(last) || last < 1 || last > 5000)
+      throw new Error('Gösterilecek mum sayısı 1–5000 olmalı.');
+    res.json(latestUploadCandles(req.params.id, last));
+  } catch (e) {
+    next(e);
+  }
+});
+app.delete('/api/uploads/:id', (req, res, next) => {
+  try {
+    if (!deleteUpload(req.params.id)) throw new HttpError(404, 'Veri seti bulunamadı.');
+    res.json({ deleted: true });
+  } catch (e) {
+    next(e);
+  }
+});
 app.get('/api/workspace', (_req, res) => res.json(readWorkspace()));
 app.get('/api/backup', (_req, res) => res.json(exportBackup()));
 app.post('/api/backtests/delete', (req, res, next) => {
@@ -163,13 +200,28 @@ app.post('/api/backtests', async (req, res, next) => {
         Math.floor(Date.now() / 1000 / intervals[config.interval]) * intervals[config.interval] -
           intervals[config.interval],
       );
-    const candles =
-      config.mode === 'demo'
+    const upload = config.dataset ? readUpload(config.dataset) : null;
+    if (config.dataset && !upload)
+      throw new Error(
+        'Seçilen veri seti bulunamadı; silinmiş olabilir. Başka bir veri kaynağı seçin.',
+      );
+    if (upload && upload.interval !== config.interval)
+      throw new Error(
+        `Bu veri setinin zaman dilimi ${upload.interval}; başka bir dilim seçilemez.`,
+      );
+    const candles = upload
+      ? uploadCandles(upload.id, start, end)
+      : config.mode === 'demo'
         ? demoCandles(config.interval, start, end)
         : await getCandles(symbolOf(config), config.interval, start, end);
+    if (upload && !candles.length)
+      throw new Error(
+        'Veri setinde bu tarih aralığında mum yok. Tarihleri veri setinin aralığına göre seçin.',
+      );
     const signals =
       config.strategy === 'python' ? await runPython(config.python!, candles) : undefined;
     const result = backtest(candles, config, signals);
+    if (upload) result.source = uploadSource(upload.name);
     saveReport(result);
     res.json(result);
   } catch (e) {

@@ -3,6 +3,7 @@ import {
   LIVE_DATA_START,
   SYMBOL_PATTERN,
   symbolOf,
+  UUID_PATTERN,
   type Candle,
   type Config,
   type Interval,
@@ -23,6 +24,8 @@ export function validateConfig(c: Config) {
     throw new Error('Geçersiz strateji, zaman dilimi veya veri modu.');
   if (c.symbol !== undefined && (typeof c.symbol !== 'string' || !SYMBOL_PATTERN.test(c.symbol)))
     throw new Error('Geçersiz işlem çifti: yalnızca Binance USDT spot çiftleri desteklenir.');
+  if (c.dataset !== undefined && (typeof c.dataset !== 'string' || !UUID_PATTERN.test(c.dataset)))
+    throw new Error('Geçersiz veri seti.');
   const limits: Record<string, [number, number]> = {
     capital: [10, 1e9],
     allocation: [1, 100],
@@ -69,7 +72,7 @@ export function validateConfig(c: Config) {
 // Kept out of validateConfig so stored presets and reports stay loadable. Only the BTCUSDT
 // listing date is known locally; other pairs rely on Binance proving the missing range.
 export function validateLiveRange(c: Config) {
-  if (c.mode === 'live' && symbolOf(c) === 'BTCUSDT' && c.start < LIVE_DATA_START)
+  if (c.mode === 'live' && !c.dataset && symbolOf(c) === 'BTCUSDT' && c.start < LIVE_DATA_START)
     throw new Error(
       `Binance BTC/USDT verileri ${LIVE_DATA_START} tarihinde başlar. Bu tarih veya sonrasını seçin.`,
     );
@@ -113,7 +116,9 @@ export function strategyWarmup(c: Config): number {
 }
 export function validateCandles(candles: Candle[], interval: Interval) {
   const step = intervals[interval];
-  // Holes are allowed: the data layer only admits open times Binance confirms it never had.
+  // Holes are allowed: the data layer only admits open times Binance confirms it never had,
+  // and uploaded files report theirs. Times share one grid, relative to the first candle, so
+  // a daily series opening at 21:00 UTC is as valid as one opening at midnight.
   candles.forEach((b, i) => {
     if (
       ![b.time, b.open, b.high, b.low, b.close, b.volume].every(Number.isFinite) ||
@@ -122,7 +127,7 @@ export function validateCandles(candles: Candle[], interval: Interval) {
       b.high < Math.max(b.open, b.close) ||
       b.low > Math.min(b.open, b.close) ||
       b.high < b.low ||
-      b.time % step !== 0 ||
+      (b.time - candles[0].time) % step !== 0 ||
       (i > 0 && b.time <= candles[i - 1].time)
     )
       throw new Error('Veride geçersiz, sırasız veya yinelenen mum var.');

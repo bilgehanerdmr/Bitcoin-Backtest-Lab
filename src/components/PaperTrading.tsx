@@ -131,7 +131,8 @@ export function PaperTrading({
     setError('');
     const today = utcDate(Date.now() / 1000),
       request = {
-        config: { ...config, mode, start: today, end: today },
+        // Paper trading always runs on Binance, whatever the terminal's data source is.
+        config: { ...config, dataset: undefined, mode, start: today, end: today },
         warmup,
         ...(mode === 'demo' ? { demoSpeed: speed } : {}),
       };

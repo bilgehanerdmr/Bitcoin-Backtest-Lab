@@ -38,7 +38,7 @@ export function BackupPanel({
         'application/json',
       );
       setMessage(
-        `${backup.candles.length.toLocaleString('tr-TR')} mum, ${backup.backtests.length} rapor, ${backup.workspace.presets.length} şablon ve ${backup.paperSessions?.length ?? 0} canlı test oturumu dışa aktarıldı.`,
+        `${backup.candles.length.toLocaleString('tr-TR')} mum, ${backup.backtests.length} rapor, ${backup.workspace.presets.length} şablon, ${backup.uploads?.length ?? 0} yüklenen veri seti ve ${backup.paperSessions?.length ?? 0} canlı test oturumu dışa aktarıldı.`,
       );
     } catch (e) {
       setError((e as Error).message);
@@ -82,7 +82,7 @@ export function BackupPanel({
       onImported(summary);
       setPending(null);
       setMessage(
-        `${summary.candlesAdded.toLocaleString('tr-TR')} mum, ${summary.reportsAdded} rapor, ${summary.presetsAdded} şablon ve ${summary.sessionsAdded} canlı test oturumu eklendi. Mevcut ${summary.candlesSkipped.toLocaleString('tr-TR')} mum ve ${summary.reportsSkipped} rapor korundu. Ayarlar yerel depoya kaydedildi.`,
+        `${summary.candlesAdded.toLocaleString('tr-TR')} mum, ${summary.reportsAdded} rapor, ${summary.presetsAdded} şablon, ${summary.uploadsAdded} veri seti ve ${summary.sessionsAdded} canlı test oturumu eklendi. Mevcut ${summary.candlesSkipped.toLocaleString('tr-TR')} mum ve ${summary.reportsSkipped} rapor korundu. Ayarlar yerel depoya kaydedildi.`,
       );
     } catch (e) {
       setError((e as Error).message);
@@ -158,6 +158,9 @@ export function BackupPanel({
               </span>
               <span>
                 <b>{pending.backup.workspace.presets.length}</b> şablon
+              </span>
+              <span>
+                <b>{pending.backup.uploads?.length ?? 0}</b> veri seti
               </span>
               <span>
                 <b>{pending.backup.paperSessions?.length ?? 0}</b> canlı test

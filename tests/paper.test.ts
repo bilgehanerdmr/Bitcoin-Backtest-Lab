@@ -365,6 +365,9 @@ describe('Session lifecycle', () => {
     await expect(start({ ...base, strategy: 'sma', fast: 30, slow: 10 })).rejects.toThrow(
       /Hızlı ortalama/,
     );
+    await expect(
+      start({ ...base, strategy: 'sma', dataset: '11111111-1111-4111-8111-111111111111' }),
+    ).rejects.toThrow(/yalnızca Binance/);
     expect(manager!.list()).toEqual([]);
   });
   it('stops itself at the candle limit and saves the final report', async () => {

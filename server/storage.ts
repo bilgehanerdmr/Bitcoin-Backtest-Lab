@@ -8,6 +8,7 @@ import {
 } from '../shared/workspace';
 import { DEFAULT_SYMBOL, type Result } from '../shared/types';
 import * as paperStore from './paper-store';
+import { listUploads, uploadCandles, uploadExists, writeUploadRows } from './uploads';
 db.exec(
   'CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1), payload TEXT NOT NULL)',
 );
@@ -43,6 +44,7 @@ export function exportBackup(): Backup {
       db.prepare('SELECT payload FROM backtests ORDER BY created_at').all() as { payload: string }[]
     ).map((row) => JSON.parse(row.payload) as Result),
     workspace: readWorkspace() ?? emptyWorkspace(),
+    uploads: listUploads().map((upload) => ({ upload, candles: uploadCandles(upload.id) })),
     paperSessions: paperStore.listSessions().map((session) => ({
       session,
       signals: paperStore.readSignals(session.id),
@@ -63,6 +65,8 @@ export function importBackup(input: unknown): ImportSummary {
     presetsAdded: workspace.presets.length - before.presets.length,
     sessionsAdded: 0,
     sessionsSkipped: 0,
+    uploadsAdded: 0,
+    uploadsSkipped: 0,
     workspace,
   };
   const candle = db.prepare(
@@ -89,6 +93,13 @@ export function importBackup(input: unknown): ImportSummary {
       const { changes } = report.run(r.id, r.createdAt, JSON.stringify(r));
       if (changes) summary.reportsAdded++;
       else summary.reportsSkipped++;
+    }
+    for (const { upload, candles } of input.uploads ?? []) {
+      if (uploadExists(upload.id)) summary.uploadsSkipped++;
+      else {
+        writeUploadRows(upload, candles);
+        summary.uploadsAdded++;
+      }
     }
     for (const { session, signals, equity, trades } of input.paperSessions ?? []) {
       if (paperStore.sessionExists(session.id)) {
