@@ -33,11 +33,14 @@ export function PriceChart({
   indicators,
   fast,
   slow,
+  precision = 2,
 }: {
   candles: Candle[];
   indicators: boolean;
   fast: number;
   slow: number;
+  // Price decimals of the pair, e.g. 8 for SHIBUSDT, so small prices do not read as 0.00.
+  precision?: number;
 }) {
   const el = useRef<HTMLDivElement>(null),
     chart = useRef<IChartApi | null>(null),
@@ -81,6 +84,10 @@ export function PriceChart({
       chart.current = null;
     };
   }, []);
+  useEffect(() => {
+    const priceFormat = { type: 'price' as const, precision, minMove: 1 / 10 ** precision };
+    for (const s of [series.current, ma1.current, ma2.current]) s?.applyOptions({ priceFormat });
+  }, [precision]);
   useEffect(() => {
     if (!chart.current) return;
     series.current!.setData(candles.map((b) => ({ ...b, time: b.time as UTCTimestamp })));

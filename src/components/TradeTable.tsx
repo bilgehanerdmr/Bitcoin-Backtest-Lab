@@ -25,6 +25,7 @@ export function TradeTable({
   trades,
   page,
   setPage,
+  digits = 2,
   empty = {
     title: 'Bu aralıkta işlem sinyali oluşmadı.',
     hint: 'Tarih aralığını genişletin veya strateji parametrelerini değiştirin.',
@@ -33,6 +34,8 @@ export function TradeTable({
   trades: Trade[];
   page: number;
   setPage: (n: number) => void;
+  // Price decimals of the traded pair.
+  digits?: number;
   empty?: { title: string; hint: string };
 }) {
   const size = 7,
@@ -62,8 +65,8 @@ export function TradeTable({
                   <small>{date(t.exitTime)}</small>
                 </td>
                 <td>
-                  {money(t.entry)}
-                  <small>{money(t.exit)}</small>
+                  {money(t.entry, digits)}
+                  <small>{money(t.exit, digits)}</small>
                 </td>
                 <td className={t.pnl >= 0 ? 'positive' : 'negative'}>
                   {t.pnl >= 0 ? '+' : ''}

@@ -40,7 +40,7 @@ for (const table of ['candles', 'candle_gaps'] as const)
 // Overridable so the browser tests can run against a local stand-in for Binance.
 const REST_URL = process.env.BINANCE_REST_URL ?? 'https://data-api.binance.vision/api/v3';
 let retryAfter = 0;
-// Every market-data request names its pair; `symbol` is part of `params`.
+// Market-data requests name their pair in `params` (exchangeInfo names none).
 export async function binance(path: string, params: Record<string, string>) {
   if (Date.now() < retryAfter)
     throw new HttpError(
@@ -62,6 +62,12 @@ export async function binance(path: string, params: Record<string, string>) {
     retryAfter =
       Date.now() + Math.max(60, Number(response.headers.get('retry-after')) || 60) * 1000;
     throw new HttpError(503, 'Binance istek sınırı. Lütfen daha sonra tekrar deneyin.');
+  }
+  // An unknown or delisted pair is the user's choice, not an outage.
+  if (response.status === 400) {
+    const body = (await response.json().catch(() => null)) as { code?: number } | null;
+    if (body?.code === -1121)
+      throw new Error(`Binance bu işlem çiftini tanımıyor: ${params.symbol ?? ''}.`);
   }
   if (!response.ok) throw new HttpError(502, `Binance verisi alınamadı (HTTP ${response.status}).`);
   try {

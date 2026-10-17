@@ -161,3 +161,43 @@ test('real Binance paper session trades on closed 1m candles from the WebSocket'
   expect(report.paper).toMatchObject({ kind: 'session', sessionId: id });
   expect(report.candleCount).toBe(stopped.tradingCandles);
 });
+test('real Binance pair list, an ETH backtest and SHIB prices with their own decimals', async ({
+  page,
+}) => {
+  test.skip(
+    process.env.LIVE_TESTS !== '1',
+    'Opt-in integration test requires Binance network access.',
+  );
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto('/');
+  const search = page.getByRole('combobox', { name: 'İşlem çifti ara' });
+  await page.getByRole('button', { name: 'İşlem çifti: BTC / USDT' }).click();
+  await expect(page.locator('.pair-picker small')).toHaveText(/çift daha; aramayı daraltın/);
+  await search.fill('ETH');
+  await page.getByRole('option', { name: 'ETH / USDT', exact: true }).click();
+  await expect(page.locator('.chart-panel h2')).toHaveText('ETH / USDT');
+  await expect(page.locator('.connection')).toContainText('CANLI BAĞLANTI', { timeout: 30000 });
+  const day = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  await page.getByLabel('Başlangıç · UTC').fill(day);
+  await page.getByLabel('Bitiş · UTC').fill(day);
+  const response = page.waitForResponse(
+    (r) => r.url().endsWith('/api/backtests') && r.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Backtest Başlat', exact: true }).click();
+  const completed = await response;
+  expect(completed.ok()).toBe(true);
+  const result: Result = await completed.json();
+  expect(result.config.symbol).toBe('ETHUSDT');
+  expect(result.candleCount).toBe(24);
+  await page.getByRole('button', { name: 'İşlem çifti: ETH / USDT' }).click();
+  await search.fill('SHIB');
+  await search.press('Enter');
+  await expect(page.locator('.chart-panel h2')).toHaveText('SHIB / USDT');
+  await expect(page.getByLabel('Başlangıç · UTC')).toHaveAttribute('min', '2021-05-10');
+  await expect(page.locator('.price-metric .metric-value').first()).toContainText(
+    /\$0\.0000\d{4}/,
+    { timeout: 30000 },
+  );
+  expect(errors).toEqual([]);
+});

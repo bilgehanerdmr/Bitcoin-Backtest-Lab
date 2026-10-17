@@ -163,12 +163,15 @@ export function validateCustomStrategy(input: unknown): asserts input is CustomS
 export function candleLabel(offset: number): string {
   return offset === 0 ? 'Son kapanan mum' : `${offset} mum önce`;
 }
-export function ruleText(r: CandleRule): string {
+// Units double as comparison keys; on screen, volume is in the pair's base asset (BTC for
+// BTCUSDT, ETH for ETHUSDT) and prices in USDT.
+export const unitLabel = (unit: string, base = 'BTC') => (unit === 'BTC' ? base : unit);
+export function ruleText(r: CandleRule, base = 'BTC'): string {
   const ref = (v: CandleReference) => `${candleLabel(v.offset)} · ${candleFields[v.field].label}`;
   const number = (n: number) => (Number.isFinite(n) ? String(n) : '…');
   const right =
     r.right.kind === 'number'
-      ? `${number(r.right.value)} ${candleFields[r.left.field].unit}`
+      ? `${number(r.right.value)} ${unitLabel(candleFields[r.left.field].unit, base)}`
       : `${ref(r.right)}${r.right.factor === 1 ? '' : ` × ${number(r.right.factor)}`}`;
   return `${ref(r.left)} ${operators[r.operator]} ${right}`;
 }

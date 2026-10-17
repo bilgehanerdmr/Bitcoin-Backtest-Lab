@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   BarChart3,
   Bitcoin,
+  Coins,
   BookOpen,
   Check,
   ChevronDown,
@@ -59,6 +60,8 @@ import { examplePython } from '../shared/python-strategy';
 import { BackupPanel } from './components/BackupPanel';
 import { PaperTrading } from './components/PaperTrading';
 import { UploadPanel } from './components/UploadPanel';
+import { PairPicker } from './components/PairPicker';
+import { baseOf, pairLabel, priceDecimals, stepDecimals, type PairInfo } from '../shared/pairs';
 import type { UploadMeta } from '../shared/upload';
 import { utcDate } from '../shared/paper';
 import { TradeTable, tradesCsv } from './components/TradeTable';
@@ -73,7 +76,12 @@ import {
 type Page = 'dashboard' | 'backtest' | 'paper' | 'strategies' | 'history' | 'data';
 type Summary = Omit<Result, 'trades' | 'equity'> & { tradeCount: number };
 type Dataset = { symbol: string; interval: Interval; count: number; start: number; end: number };
-const pairLabel = (symbol: string) => symbol.replace(/USDT$/, '') + ' / USDT';
+// A pair listed after the chosen start date moves the start to its listing day.
+function fromListing(c: Config, symbol: string, first: string | undefined): Config {
+  return first && !c.dataset && symbolOf(c) === symbol && c.start < first
+    ? { ...c, start: first, end: c.end < first ? first : c.end }
+    : c;
+}
 const navigation = [
   { id: 'dashboard', label: 'Genel Bakış', icon: LayoutDashboard },
   { id: 'backtest', label: 'Backtest Terminali', icon: FlaskConical },
@@ -113,6 +121,8 @@ function App() {
     [datasets, setDatasets] = useState<Dataset[]>([]),
     [uploads, setUploads] = useState<UploadMeta[]>([]),
     [uploadCandles, setUploadCandles] = useState<Candle[]>([]),
+    [pairs, setPairs] = useState<PairInfo[]>([]),
+    [listings, setListings] = useState<Record<string, number | null>>({}),
     [tab, setTab] = useState<'equity' | 'drawdown' | 'trades'>('equity'),
     [modal, setModal] = useState<'settings' | 'help' | 'save' | null>(null),
     [customEditor, setCustomEditor] = useState(false),
@@ -140,7 +150,42 @@ function App() {
     change = ticker ? +ticker.priceChangePercent : 0;
   // An uploaded dataset replaces Binance as the terminal's data: chart, prices and backtests.
   const upload = config.dataset ? (uploads.find((u) => u.id === config.dataset) ?? null) : null,
-    chartCandles = upload ? uploadCandles : market.candles;
+    chartCandles = upload ? uploadCandles : market.candles,
+    symbol = symbolOf(config),
+    base = baseOf(symbol);
+  // Price decimals follow the pair's Binance tick size (8 for SHIBUSDT); uploaded data has
+  // none, so its own prices decide.
+  const digitsFor = (s: string) => {
+      const pair = pairs.find((p) => p.symbol === s);
+      return pair ? Math.max(2, stepDecimals(pair.tickSize)) : 2;
+    },
+    digits = upload ? priceDecimals(chartCandles.at(-1)?.close ?? 0) : digitsFor(symbol),
+    // BTCUSDT's listing is known locally; other pairs report theirs once looked up.
+    listingDate = (s: string) =>
+      s === 'BTCUSDT' ? LIVE_DATA_START : listings[s] ? utcDate(listings[s]!) : undefined;
+  useEffect(() => {
+    api<PairInfo[]>('/pairs')
+      .then(setPairs)
+      .catch(() => {
+        /* The picker says the list could not be loaded; BTCUSDT keeps working. */
+      });
+  }, []);
+  useEffect(() => {
+    if (symbol === 'BTCUSDT' || symbol in listings) return;
+    let active = true;
+    api<PairInfo>('/pairs/' + symbol)
+      .then((p) => {
+        if (!active) return;
+        setListings((old) => ({ ...old, [symbol]: p.listed }));
+        if (p.listed !== null) setConfig((c) => fromListing(c, symbol, utcDate(p.listed!)));
+      })
+      .catch(() => {
+        /* Without a listing date, Binance itself proves where the data starts. */
+      });
+    return () => {
+      active = false;
+    };
+  }, [symbol, listings]);
   useEffect(() => {
     if (!config.dataset) {
       setUploadCandles([]);
@@ -318,7 +363,7 @@ function App() {
     try {
       validateConfig(actual);
       validateDataSource(actual);
-      validateLiveRange(actual);
+      validateLiveRange(actual, listingDate(symbolOf(actual)));
     } catch (e) {
       setError((e as Error).message);
       return;
@@ -452,21 +497,22 @@ function App() {
       </label>
       <div className="strategy-description">{descriptions[config.strategy]}</div>
       <div className="form-grid">
-        <label className="field">
+        <div className="field">
           <span>{terminal && upload ? 'Veri' : 'İşlem çifti'}</span>
-          <div className="static-input">
-            {terminal && upload ? (
-              <>
-                {upload.name} <span className="muted">Yüklenen</span>
-              </>
-            ) : (
-              <>
-                <span className="mini-bitcoin">₿</span> BTC / USDT{' '}
-                <span className="muted">Spot</span>
-              </>
-            )}
-          </div>
-        </label>
+          {terminal && upload ? (
+            <div className="static-input">
+              {upload.name} <span className="muted">Yüklenen</span>
+            </div>
+          ) : (
+            <PairPicker
+              value={symbol}
+              pairs={pairs}
+              onChange={(next) => {
+                setConfig((c) => fromListing({ ...c, symbol: next }, next, listingDate(next)));
+              }}
+            />
+          )}
+        </div>
         <label className="field">
           <span>Zaman dilimi</span>
           <select
@@ -496,13 +542,7 @@ function App() {
             <input
               type="date"
               value={config.start}
-              min={
-                upload
-                  ? utcDate(upload.start)
-                  : symbolOf(config) === 'BTCUSDT'
-                    ? LIVE_DATA_START
-                    : undefined
-              }
+              min={upload ? utcDate(upload.start) : listingDate(symbol)}
               max={config.end}
               onChange={(e) => update('start', e.target.value)}
             />
@@ -654,14 +694,24 @@ function App() {
       {result ? (
         <>
           {tab === 'trades' ? (
-            <TradeTable trades={result.trades} page={tradePage} setPage={setTradePage} />
+            <TradeTable
+              trades={result.trades}
+              page={tradePage}
+              setPage={setTradePage}
+              digits={
+                result.config.dataset
+                  ? priceDecimals(result.trades[0]?.entry ?? 0)
+                  : digitsFor(symbolOf(result.config))
+              }
+            />
           ) : (
             <EquityChart points={result.equity} drawdown={tab === 'drawdown'} />
           )}
           <div className="result-footnote">
-            {strategyLabel(result.config)} · {result.config.interval} ·{' '}
-            {result.candleCount.toLocaleString('tr-TR')} kapanmış mum · {result.config.start} →{' '}
-            {result.config.end} (UTC)
+            {strategyLabel(result.config)} ·{' '}
+            {result.config.dataset ? '' : pairLabel(symbolOf(result.config)) + ' · '}
+            {result.config.interval} · {result.candleCount.toLocaleString('tr-TR')} kapanmış mum ·{' '}
+            {result.config.start} → {result.config.end} (UTC)
             {!!result.missingCandles &&
               (result.config.dataset
                 ? ` · Veri dosyasında bulunmayan ${result.missingCandles.toLocaleString('tr-TR')} mum (doğrulanamayan boşluk) atlandı`
@@ -682,7 +732,12 @@ function App() {
                   {result.config.custom![side].rules.length ? (
                     <ul>
                       {result.config.custom![side].rules.map((r, i) => (
-                        <li key={i}>{ruleText(r)}</li>
+                        <li key={i}>
+                          {ruleText(
+                            r,
+                            result.config.dataset ? 'birim' : baseOf(symbolOf(result.config)),
+                          )}
+                        </li>
                       ))}
                     </ul>
                   ) : (
@@ -895,7 +950,7 @@ function App() {
                       <span className="tiny-badge amber">YÜKLENEN</span>
                     </div>
                     <div className="metric-value">
-                      {last ? money(last.close) : '—'}
+                      {last ? money(last.close, digits) : '—'}
                       {last && chartCandles.length > 1 && (
                         <span
                           className={
@@ -915,7 +970,7 @@ function App() {
                     label="Aralıktaki En Yüksek"
                     value={
                       chartCandles.length
-                        ? money(Math.max(...chartCandles.map((b) => b.high)))
+                        ? money(Math.max(...chartCandles.map((b) => b.high)), digits)
                         : '—'
                     }
                     sub={`Grafikteki son ${chartCandles.length.toLocaleString('tr-TR')} mum`}
@@ -924,7 +979,9 @@ function App() {
                   <Metric
                     label="Aralıktaki En Düşük"
                     value={
-                      chartCandles.length ? money(Math.min(...chartCandles.map((b) => b.low))) : '—'
+                      chartCandles.length
+                        ? money(Math.min(...chartCandles.map((b) => b.low)), digits)
+                        : '—'
                     }
                     sub={`Grafikteki son ${chartCandles.length.toLocaleString('tr-TR')} mum`}
                     icon={<ArrowDownRight size={15} />}
@@ -941,15 +998,16 @@ function App() {
                   <div className="metric-card price-metric">
                     <div className="metric-label">
                       <span className="coin-icon">
-                        <Bitcoin size={19} />
+                        {base === 'BTC' ? <Bitcoin size={19} /> : <Coins size={18} />}
                       </span>
                       <span>
-                        Bitcoin <span className="muted">BTC / USDT</span>
+                        {base === 'BTC' ? 'Bitcoin' : base}{' '}
+                        <span className="muted">{pairLabel(symbol)}</span>
                       </span>
                       <span className="tiny-badge">SPOT</span>
                     </div>
                     <div className="metric-value">
-                      {price !== null ? '$' + money(price) : '—'}
+                      {price !== null ? '$' + money(price, digits) : '—'}
                       <span className={'change-pill ' + (change >= 0 ? 'positive' : 'negative')}>
                         {price !== null ? (
                           <>
@@ -973,20 +1031,20 @@ function App() {
                   </div>
                   <Metric
                     label="24s En Yüksek"
-                    value={ticker ? '$' + money(+ticker.highPrice) : '—'}
+                    value={ticker ? '$' + money(+ticker.highPrice, digits) : '—'}
                     sub="Son 24 saatin zirvesi"
                     icon={<ArrowUpRight size={15} />}
                   />
                   <Metric
                     label="24s En Düşük"
-                    value={ticker ? '$' + money(+ticker.lowPrice) : '—'}
+                    value={ticker ? '$' + money(+ticker.lowPrice, digits) : '—'}
                     sub="Son 24 saatin tabanı"
                     icon={<ArrowDownRight size={15} />}
                   />
                   <Metric
                     label="24s İşlem Hacmi"
                     value={ticker ? '$' + money(+ticker.quoteVolume / 1e9, 3) + 'B' : '—'}
-                    sub="Binance · BTC/USDT"
+                    sub={'Binance · ' + pairLabel(symbol)}
                     icon={<BarChart3 size={15} />}
                   />
                 </div>
@@ -1036,9 +1094,9 @@ function App() {
                     <div className="panel-heading">
                       <div className="heading-icon">
                         <span className="coin-icon small-coin">
-                          <Bitcoin size={16} />
+                          {!upload && base === 'BTC' ? <Bitcoin size={16} /> : <Coins size={15} />}
                         </span>
-                        <h2>{upload ? upload.name : 'BTC / USDT'}</h2>
+                        <h2>{upload ? upload.name : pairLabel(symbol)}</h2>
                         <span className="muted chart-exchange">
                           {upload ? 'Yüklenen veri' : 'Binance'}
                         </span>
@@ -1097,32 +1155,35 @@ function App() {
                       {last ? (
                         <>
                           <span>
-                            A <b>{money(last.open)}</b>
+                            A <b>{money(last.open, digits)}</b>
                           </span>
                           <span>
-                            Y <b>{money(last.high)}</b>
+                            Y <b>{money(last.high, digits)}</b>
                           </span>
                           <span>
-                            D <b>{money(last.low)}</b>
+                            D <b>{money(last.low, digits)}</b>
                           </span>
                           <span>
                             K{' '}
                             <b className={last.close >= last.open ? 'positive' : 'negative'}>
-                              {money(last.close)}
+                              {money(last.close, digits)}
                             </b>
                           </span>
                         </>
                       ) : (
                         <span>
-                          {upload ? 'Veri seti yükleniyor' : 'BTC / USDT piyasa verisi bekleniyor'}
+                          {upload
+                            ? 'Veri seti yükleniyor'
+                            : `${pairLabel(symbol)} piyasa verisi bekleniyor`}
                         </span>
                       )}
                     </div>
                     {chartCandles.length ? (
                       <PriceChart
-                        key={upload ? upload.id : interval}
+                        key={upload ? upload.id : symbol + interval}
                         candles={chartCandles}
                         indicators={indicators}
+                        precision={digits}
                         fast={config.fast}
                         slow={config.slow}
                       />
@@ -1195,6 +1256,7 @@ function App() {
             <PaperTrading
               fields={strategyFields(false)}
               config={config}
+              digitsFor={digitsFor}
               onOpenReport={openResult}
               onToast={setToast}
               onReportsChanged={refreshLists}
@@ -1403,6 +1465,7 @@ function App() {
                               {h.paper && <PaperBadge kind={h.paper.kind} />}
                             </td>
                             <td>
+                              {h.config.dataset ? '' : pairLabel(symbolOf(h.config)) + ' · '}
                               {h.config.interval}
                               <small>
                                 {h.config.start} → {h.config.end}
@@ -1468,7 +1531,9 @@ function App() {
                             <div className="compare-card" key={h.id}>
                               <strong>{strategyLabel(h.config)}</strong>
                               <small>
-                                {h.config.start} — {h.config.end} · {h.config.interval} · {h.source}
+                                {h.config.start} — {h.config.end} ·{' '}
+                                {h.config.dataset ? '' : pairLabel(symbolOf(h.config)) + ' · '}
+                                {h.config.interval} · {h.source}
                                 {h.paper &&
                                   (h.paper.kind === 'session'
                                     ? ' · Canlı (paper)'
@@ -1540,7 +1605,7 @@ function App() {
                     <h2>Binance Spot</h2>
                     <span className="tiny-badge">PUBLIC API</span>
                   </div>
-                  <p>BTC / USDT · OHLCV mum verileri ve canlı fiyat akışı</p>
+                  <p>USDT spot çiftleri · OHLCV mum verileri ve canlı fiyat akışı</p>
                   <div className="data-detail">
                     <span>Bağlantı durumu</span>
                     <b className={market.status === 'live' ? 'positive' : 'muted'}>{statusLabel}</b>
@@ -1702,6 +1767,7 @@ function App() {
                   .map((h) => (
                     <li key={h.id}>
                       {strategyLabel(h.config)} · {h.config.start} → {h.config.end} ·{' '}
+                      {h.config.dataset ? '' : pairLabel(symbolOf(h.config)) + ' · '}
                       {h.config.interval}
                     </li>
                   ))}
@@ -1823,6 +1889,7 @@ function App() {
           candles={chartCandles}
           interval={upload ? upload.interval : interval}
           sourceLabel={upload ? 'Yüklenen veri · ' + upload.name : undefined}
+          base={upload ? 'birim' : base}
           onClose={() => setCustomEditor(false)}
           onApply={(custom) => {
             setConfig((c) => ({ ...c, strategy: 'custom', custom }));

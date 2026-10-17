@@ -24,6 +24,8 @@ import {
   uploadCandles,
 } from './uploads';
 import { uploadSource } from '../shared/upload';
+import { utcDate } from '../shared/paper';
+import { listPairs, pairInfo } from './pairs';
 import { createPaperManager } from './paper';
 import {
   deleteReports,
@@ -112,6 +114,29 @@ app.get('/api/datasets', (_req, res) =>
       .all(),
   ),
 );
+// A pair Binance does not trade is the user's error. Its listing date bounds live data; when
+// the pair list cannot be loaded, Binance itself answers for the pair and its range.
+async function listingOf(symbol: string): Promise<string | undefined> {
+  const pair = await pairInfo(symbol).catch(() => undefined);
+  if (pair === null) throw new Error(`Binance’te işlemde olmayan bir çift: ${symbol}.`);
+  return pair?.listed != null ? utcDate(pair.listed) : undefined;
+}
+app.get('/api/pairs', async (_req, res, next) => {
+  try {
+    res.json(await listPairs());
+  } catch (e) {
+    next(e);
+  }
+});
+app.get('/api/pairs/:symbol', async (req, res, next) => {
+  try {
+    const pair = await pairInfo(querySymbol(req.params.symbol));
+    if (!pair) throw new HttpError(404, 'Binance’te işlemde olmayan bir çift.');
+    res.json(pair);
+  } catch (e) {
+    next(e);
+  }
+});
 app.get('/api/uploads', (_req, res) => res.json(listUploads()));
 app.get('/api/uploads/:id/candles', (req, res, next) => {
   try {
@@ -193,7 +218,7 @@ app.post('/api/backtests', async (req, res, next) => {
     const config = req.body as Config;
     validateConfig(config);
     validateDataSource(config);
-    validateLiveRange(config);
+    validateLiveRange(config, config.dataset ? undefined : await listingOf(symbolOf(config)));
     const start = Date.parse(config.start + 'T00:00:00Z') / 1000,
       end = Math.min(
         Date.parse(config.end + 'T23:59:59Z') / 1000,
@@ -240,6 +265,8 @@ app.get('/api/paper/:id', (req, res, next) => {
 });
 app.post('/api/paper', async (req, res, next) => {
   try {
+    const symbol = (req.body as { config?: { symbol?: unknown } } | undefined)?.config?.symbol;
+    if (typeof symbol === 'string' && SYMBOL_PATTERN.test(symbol)) await listingOf(symbol);
     res.json(await paper.start(req.body));
   } catch (e) {
     next(e);

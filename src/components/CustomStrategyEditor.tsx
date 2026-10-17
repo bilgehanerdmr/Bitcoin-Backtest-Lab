@@ -12,6 +12,7 @@ import {
   patternNames,
   patternStrategy,
   ruleText,
+  unitLabel,
   validateCustomStrategy,
   type CandleField,
   type CandleReference,
@@ -30,6 +31,8 @@ interface Props {
   interval: Interval;
   // Names the preview's data when it is not the Binance chart (an uploaded dataset).
   sourceLabel?: string;
+  // Base asset of the pair, the unit of volume (BTC, ETH, …).
+  base?: string;
   onApply: (value: CustomStrategy) => void;
   onClose: () => void;
 }
@@ -38,6 +41,7 @@ export function CustomStrategyEditor({
   candles,
   interval,
   sourceLabel,
+  base = 'BTC',
   onApply,
   onClose,
 }: Props) {
@@ -159,6 +163,7 @@ export function CustomStrategyEditor({
             </div>
           </div>
           <RuleGroupEditor
+            base={base}
             title="Giriş kuralları"
             description="Pozisyon yokken bu koşullar sağlanırsa LONG açılır."
             value={draft.entry}
@@ -166,6 +171,7 @@ export function CustomStrategyEditor({
             entry
           />
           <RuleGroupEditor
+            base={base}
             title="Çıkış kuralları"
             description="Açık pozisyon bu koşullarda kapatılır. Boş bırakırsanız stop-loss, take-profit ve test sonu çıkışı kullanılır."
             value={draft.exit}
@@ -193,7 +199,7 @@ export function CustomStrategyEditor({
             </small>
           </div>
           <p className="custom-method">
-            Fiyat ve fitil uzunlukları USDT, hacim BTC cinsindedir. “Gövde / toplam mum” gibi
+            Fiyat ve fitil uzunlukları USDT, hacim {base} cinsindedir. “Gövde / toplam mum” gibi
             oranlar yüzdeyle girilir. Toplam uzunluğu sıfır olan mumlarda bu oran koşulları
             eşleşmez. Giriş ve çıkış aynı anda eşleşirse çıkış önceliklidir; çıkış yapılan mumda
             yeniden giriş yapılmaz.
@@ -236,12 +242,14 @@ function RuleGroupEditor({
   description,
   value,
   onChange,
+  base,
   entry = false,
 }: {
   title: string;
   description: string;
   value: RuleGroup;
   onChange: (group: RuleGroup) => void;
+  base: string;
   entry?: boolean;
 }) {
   function update(index: number, rule: CandleRule) {
@@ -327,7 +335,7 @@ function RuleGroupEditor({
                           })
                         }
                       />
-                      <span>{candleFields[rule.left.field].unit}</span>
+                      <span>{unitLabel(candleFields[rule.left.field].unit, base)}</span>
                     </div>
                   ) : (
                     <>
@@ -368,7 +376,7 @@ function RuleGroupEditor({
                   )}
                 </div>
               </div>
-              <div className="rule-summary">{ruleText(rule)}</div>
+              <div className="rule-summary">{ruleText(rule, base)}</div>
             </div>
             <button
               className="icon-button"

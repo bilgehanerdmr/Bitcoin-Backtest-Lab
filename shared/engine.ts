@@ -13,6 +13,7 @@ import {
 } from './types';
 import { customLookback, matchesGroup, validateCustomStrategy } from './candle-rules';
 import { validatePythonStrategy, type PythonSignal } from './python-strategy';
+import { pairLabel } from './pairs';
 
 export function validateConfig(c: Config) {
   if (
@@ -76,12 +77,13 @@ export function validateDataSource(c: Config) {
       'Demo modu kaldırıldı. Binance verisini veya Veri Merkezi’nden yüklediğiniz bir veri setini kullanın.',
     );
 }
-// Kept out of validateConfig so stored presets and reports stay loadable. Only the BTCUSDT
-// listing date is known locally; other pairs rely on Binance proving the missing range.
-export function validateLiveRange(c: Config) {
-  if (c.mode === 'live' && !c.dataset && symbolOf(c) === 'BTCUSDT' && c.start < LIVE_DATA_START)
+// Kept out of validateConfig so stored presets and reports stay loadable. The BTCUSDT listing
+// date is known locally; for other pairs the caller passes the date Binance reported, if any.
+export function validateLiveRange(c: Config, listed?: string) {
+  const first = symbolOf(c) === 'BTCUSDT' ? LIVE_DATA_START : listed;
+  if (c.mode === 'live' && !c.dataset && first && c.start < first)
     throw new Error(
-      `Binance BTC/USDT verileri ${LIVE_DATA_START} tarihinde başlar. Bu tarih veya sonrasını seçin.`,
+      `Binance ${pairLabel(symbolOf(c))} verileri ${first} tarihinde başlar. Bu tarih veya sonrasını seçin.`,
     );
 }
 export function sma(values: number[], period: number): (number | null)[] {

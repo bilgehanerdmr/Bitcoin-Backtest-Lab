@@ -28,7 +28,8 @@ import {
   type PaperMetrics,
   type PaperView,
 } from '../../shared/paper';
-import { strategyLabel, type Config } from '../../shared/types';
+import { strategyLabel, symbolOf, type Config } from '../../shared/types';
+import { baseOf, pairLabel } from '../../shared/pairs';
 import './paper.css';
 
 const feedLabels: Record<FeedStatus, string> = {
@@ -52,12 +53,15 @@ const delta = (n: number, unit: string) =>
 export function PaperTrading({
   fields,
   config,
+  digitsFor,
   onOpenReport,
   onToast,
   onReportsChanged,
 }: {
   fields: ReactNode;
   config: Config;
+  // Price decimals of a pair, from its Binance tick size.
+  digitsFor: (symbol: string) => number;
   onOpenReport: (id: string) => void;
   onToast: (message: string) => void;
   onReportsChanged: () => void;
@@ -249,7 +253,7 @@ export function PaperTrading({
               >
                 <i className={'paper-dot ' + o.status} />
                 <span>
-                  {strategyLabel(o.config)} · {o.config.interval}
+                  {strategyLabel(o.config)} · {baseOf(symbolOf(o.config))} · {o.config.interval}
                   {o.config.mode === 'demo' ? ' · DEMO' : ''}
                 </span>
                 <small>{paperStatusLabels[o.status]}</small>
@@ -272,6 +276,7 @@ export function PaperTrading({
               <div className="heading-icon">
                 <Radio size={16} />
                 <h2>{strategyLabel(current.config)}</h2>
+                <span className="tiny-badge">{pairLabel(symbolOf(current.config))}</span>
                 <span className="tiny-badge">{current.config.interval}</span>
                 <span className={'tiny-badge ' + (current.config.mode === 'demo' ? 'amber' : '')}>
                   {current.config.mode === 'demo' ? 'DEMO' : 'BINANCE'}
@@ -362,10 +367,14 @@ export function PaperTrading({
               />
               <PaperCard
                 label="Açık pozisyon"
-                value={current.position ? 'LONG @ ' + money(current.position.entry) : 'Yok'}
+                value={
+                  current.position
+                    ? 'LONG @ ' + money(current.position.entry, digitsFor(symbolOf(current.config)))
+                    : 'Yok'
+                }
                 sub={
                   current.position
-                    ? `${current.position.quantity.toFixed(5)} BTC · ${pct((current.position.value / current.position.cost - 1) * 100)}`
+                    ? `${current.position.quantity.toPrecision(6)} ${baseOf(symbolOf(current.config))} · ${pct((current.position.value / current.position.cost - 1) * 100)}`
                     : 'Sermaye nakitte'
                 }
               />
@@ -494,6 +503,7 @@ export function PaperTrading({
                 trades={s.trades}
                 page={tradePage}
                 setPage={setTradePage}
+                digits={digitsFor(symbolOf(s.config))}
                 empty={{
                   title: 'Henüz kapanmış işlem yok.',
                   hint: 'Açık pozisyon kapandığında burada listelenir.',

@@ -1,6 +1,6 @@
 # Bitcoin Backtest Lab
 
-A local BTC/USDT research workbench with a separate TypeScript backtest engine, historical-data validation, and Python strategy callbacks.
+A local research workbench for Binance USDT spot pairs (BTC/USDT by default) with a separate TypeScript backtest engine, historical-data validation, and Python strategy callbacks.
 
 **Portfolio showcase — all rights reserved.** Source is visible for inspection. Running, reusing, modifying, distributing, or selling the project requires prior written permission, subject to the exceptions in [LICENSE](LICENSE). The setup instructions below are for the owner and authorized users.
 
@@ -29,12 +29,13 @@ Open http://127.0.0.1:5173. Without access to Binance, upload your own OHLCV CSV
 | Data and persistence | `tests/market.test.ts`, `tests/storage.test.ts` | Historical data and workspace handling                           |
 | Local API boundary   | `tests/local-access.test.ts`                    | Local request access controls                                    |
 | Paper trading        | `server/paper.ts`, `tests/paper.test.ts`        | Live sessions run through the same engine; parity tests          |
+| Trading pairs        | `server/pairs.ts`, `tests/pairs.test.ts`        | Daily-cached USDT pair list, listing dates, price precision      |
 
 On 13 September 2026, the existing unit suite passed **78 tests across 6 files** at revision `d457582fd25bc41c2a0216d524df713ef4a2e2b3`. This is a unit-test result; live exchange and browser integration checks were not rerun in that review.
 
 ## Evaluation model
 
-- Only closed, continuous OHLCV candles are accepted. The one exception is Binance’s own outages: when Binance returns a later candle, the skipped open times are confirmed never to have traded, so they are skipped (not filled in) and counted in the report. Live data starts at the BTCUSDT listing on 17 August 2017. Signals execute at the following candle’s open.
+- Only closed, continuous OHLCV candles are accepted. The one exception is Binance’s own outages: when Binance returns a later candle, the skipped open times are confirmed never to have traded, so they are skipped (not filled in) and counted in the report. Live data starts at the pair's Binance listing (17 August 2017 for BTCUSDT). Signals execute at the following candle’s open.
 - The portfolio is spot, long-only, unlevered, and holds at most one position.
 - Entry and exit both incur commission and adverse slippage. Unallocated capital stays in cash.
 - If stop-loss and take-profit are both crossed inside a candle, the stop takes precedence. Stop gaps use the opening price.
@@ -43,13 +44,17 @@ On 13 September 2026, the existing unit suite passed **78 tests across 6 files**
 
 The model does not simulate order-book liquidity, partial fills, market impact, funding or short borrowing. OHLCV data cannot establish the exact intrabar path. The reported annualized Sharpe uses bar returns and is descriptive, not a significance test. Repeated strategy selection on the same data is not independent out-of-sample validation.
 
+## Trading pairs
+
+Any Binance spot pair quoted in USDT that is currently trading can be backtested or paper traded. `server/pairs.ts` keeps Binance's `exchangeInfo` list in SQLite and refreshes it once a day; when Binance is unreachable, the last list is served. Symbols that stream names and URLs cannot carry (for example, non-Latin token names) are left out. A pair's listing date is read once from its first daily candle and bounds its date range in the interface and on the server. Prices are displayed with the pair's own `tickSize` (eight decimals for SHIB/USDT). A pair Binance does not know or no longer trades is a 400 input error, not an outage.
+
 ## Uploaded data
 
 Users can backtest on their own OHLCV CSV files. `shared/upload.ts` detects the separator, decimal mark (including Turkish Excel's `1.234,56`), header, columns and time format (Unix s/ms/µs, ISO 8601, `d.m.yyyy`). It produces a quality report before anything is stored: skipped rows with line numbers, removed exact duplicates, and missing candles. Conflicting duplicates and irregular spacing are errors rather than silent choices. Missing candles are skipped and counted, never filled in. The same parser runs in the browser preview and on the server, which stores what it reads. Reports carry the dataset's name as their source. Tests are in `tests/upload.test.ts` and `tests/uploads.test.ts`.
 
 ## Paper trading
 
-The **Canlı Test** tab runs a built-in, custom candle, or Python strategy on live Binance BTC/USDT candles with a virtual portfolio. No orders are sent and no API key is used.
+The **Canlı Test** tab runs a built-in, custom candle, or Python strategy on live Binance candles for any USDT pair with a virtual portfolio. No orders are sent and no API key is used.
 
 - Sessions run on the server, not in the browser. Closed candles come from the Binance kline WebSocket (`k.x`); after a disconnect, or 15 seconds after a close that was not received, missing candles are fetched over REST.
 - A configurable number of earlier candles warms up the strategy. Trades, equity, buy-and-hold, and metrics count only from the first candle that opens after the start.

@@ -1,6 +1,6 @@
 # Bitcoin Backtest Lab
 
-A local BTC/USDT research and backtesting platform with a Turkish interface.
+A local research and backtesting platform for Binance USDT spot pairs (BTC/USDT by default), with a Turkish interface.
 
 **Portfolio showcase — all rights reserved.** Source is visible for inspection. Running, reusing, modifying, distributing, or selling the project requires prior written permission, subject to the exceptions in [LICENSE](LICENSE). The setup instructions below are for the owner and authorized users.
 
@@ -43,7 +43,8 @@ In this mode, both the interface and API are served at **http://127.0.0.1:3001**
 
 ## Features
 
-- Real-time Binance Spot BTC/USDT prices and candlestick charts over WebSocket, with reconnection and a REST fallback every 30 seconds.
+- Real-time Binance Spot prices and candlestick charts over WebSocket, with reconnection and a REST fallback every 30 seconds.
+- Every Binance USDT spot pair: a searchable pair picker, prices in each pair's own decimal precision (eight decimals for SHIB/USDT), and date ranges that start at the pair's listing.
 - 1m, 5m, 15m, 1h, 4h, and 1d candles; panning, zooming, SMA indicators, and volume.
 - Paginated historical downloads by date range, missing-data checks, verification of Binance data gaps, and SQLite caching.
 - SMA crossover, Wilder RSI mean reversion, and Donchian channel breakout strategies.
@@ -73,7 +74,7 @@ Each condition compares a candle value with a constant or another candle value. 
 - Small body: body / total candle range ≤ 10%.
 - Volume increase: the last closed candle's volume > the preceding candle's volume × 1.5.
 
-The “last closed candle” is the signal candle; lookback offsets range from 0 to 20 candles. The body is `abs(close − open)`, the upper wick is `high − max(open, close)`, and the lower wick is `min(open, close) − low`. The total range is `high − low`; percentage ratios are undefined for a zero-range candle, so the corresponding condition does not match. Prices and lengths use USDT, volume uses BTC, and ratios use percentages. Compared candle values must use matching units; constants use the unit of the field on the left.
+The “last closed candle” is the signal candle; lookback offsets range from 0 to 20 candles. The body is `abs(close − open)`, the upper wick is `high − max(open, close)`, and the lower wick is `min(open, close) − low`. The total range is `high − low`; percentage ratios are undefined for a zero-range candle, so the corresponding condition does not match. Prices and lengths use USDT, volume uses the pair's base asset (BTC on BTC/USDT, ETH on ETH/USDT; `birim` on uploaded data), and ratios use percentages. Compared candle values must use matching units; constants use the unit of the field on the left.
 
 Entry and exit each have an **AND** (`VE`, all conditions) or **OR** (`VEYA`, at least one condition) group. Entry groups contain 1–20 conditions; exit groups contain 0–20. This editor does not support nested logic groups, custom Python/JavaScript execution, or indicator expressions. Leaving the exit group empty uses only the configured stop-loss/take-profit and end-of-test exit. Built-in examples include bullish engulfing, long lower wick, and three rising candles; selecting an example replaces the current entry/exit rules.
 
@@ -91,11 +92,22 @@ No API key is required. An internet connection and access to Binance's market-da
 
 Official references: [Binance public market data](https://github.com/binance/binance-spot-api-docs/blob/master/faqs/market_data_only.md), [REST API](https://github.com/binance/binance-spot-api-docs/blob/master/rest-api.md), [WebSocket streams](https://github.com/binance/binance-spot-api-docs/blob/master/web-socket-streams.md).
 
+## Trading pairs
+
+Choose the pair under **Trading pair** (`İşlem çifti`) in the Backtest Terminal or in Paper Trading: type part of a coin's name in **Search coin** (`Coin ara`) and pick it with the mouse, or with the arrow keys and Enter. The list holds the Binance spot pairs quoted in USDT that are currently trading. Popular coins come first, and up to 60 matches are shown at once. Only USDT pairs are supported.
+
+- The list comes from Binance's `exchangeInfo` endpoint. It is stored in SQLite and refreshed once a day; when Binance cannot be reached, the last list is used. Pairs whose symbols contain characters other than Latin capitals and digits (for example, Chinese-named tokens) are left out, because Binance stream names and URLs cannot carry them.
+- Each pair's first day on Binance is looked up once, from its first daily candle, and stored. Choosing a pair moves an earlier start date to that day, and the date field allows no earlier date; the server rejects earlier dates as well. BTC/USDT starts on 17 August 2017.
+- Prices use the pair's Binance price step (`tickSize`): two decimals for BTC/USDT and eight for SHIB/USDT. Uploaded data uses a precision derived from its own prices.
+- Volume and position quantities are in the pair's base asset.
+- A pair that Binance does not know or no longer trades is reported as an input error, not a connection problem; backtests and paper sessions on it are refused.
+- Reports, paper sessions, cached candles and confirmed gaps record their pair. **Data Center → Binance candle cache** (`Veri Merkezi → Binance Mum Önbelleği`) lists the cache per pair and timeframe.
+
 Charts use [TradingView Lightweight Charts™](https://www.tradingview.com/). Library license: [Apache 2.0 and NOTICE](https://github.com/tradingview/lightweight-charts).
 
 ## Backtest methodology
 
-1. Only closed, continuous OHLCV candles are used, except for Binance data gaps such as exchange outages (for example, maintenance on 8–9 February 2018 and the interruption on 24 March 2023, 12:39–14:00 UTC). When Binance returns a later candle, the application treats the skipped open times as unavailable on the exchange; it skips them without fabricating candles and reports their count. Missing candles without a later published candle produce an error. Live data starts on 17 August 2017, the BTCUSDT listing date; earlier start dates are rejected. A test processes at most 50,000 candles. Future end dates are clipped to the last closed candle. Indicators and candle rules use adjacent available candles across a gap.
+1. Only closed, continuous OHLCV candles are used, except for Binance data gaps such as exchange outages (for example, maintenance on 8–9 February 2018 and the interruption on 24 March 2023, 12:39–14:00 UTC). When Binance returns a later candle, the application treats the skipped open times as unavailable on the exchange; it skips them without fabricating candles and reports their count. Missing candles without a later published candle produce an error. Live data starts on the pair's Binance listing date (17 August 2017 for BTCUSDT); earlier start dates are rejected. A test processes at most 50,000 candles. Future end dates are clipped to the last closed candle. Indicators and candle rules use adjacent available candles across a gap.
 2. Indicator warmup takes place within the selected range. A signal calculated at the previous close executes at the next candle's open. The model is spot, long-only, unleveraged, and limited to one position.
 3. Slippage increases buy prices and decreases sell prices. Fees apply on both entry and exit. The position budget includes the entry fee; unallocated capital remains in cash.
 4. Stop-loss and take-profit levels are based on the entry price after slippage. A value of 0 disables the rule. If both levels are crossed within one candle, stop-loss takes priority. A gap through the stop at the open is filled at that candle's opening price. Strategy exit signals and intrabar levels are evaluated afterward.
@@ -134,7 +146,7 @@ Click **Use in backtest** (`Backtest'te kullan`) in the dataset list, or choose 
 
 ## Paper trading
 
-Open **Paper Trading** (`Canlı Test`), choose a strategy (built-in, custom candle, or Python), timeframe, capital and risk settings, and the number of warmup candles (`Isınma mumu`), then click **Start paper trading** (`Canlı testi başlat`). The strategy runs on real-time Binance BTC/USDT data on every closed candle, opens and closes virtual trades, and its report updates after each close. **No real orders are sent and no API key is used;** the portfolio is entirely virtual.
+Open **Paper Trading** (`Canlı Test`), choose a strategy (built-in, custom candle, or Python), timeframe, capital and risk settings, and the number of warmup candles (`Isınma mumu`), then click **Start paper trading** (`Canlı testi başlat`). The strategy runs on real-time Binance data for the chosen USDT pair on every closed candle, opens and closes virtual trades, and its report updates after each close. **No real orders are sent and no API key is used;** the portfolio is entirely virtual.
 
 ### How it works
 
@@ -180,10 +192,11 @@ Earlier versions had a synthetic demo mode. It has been removed: results on made
 - `src/`: React + TypeScript interface and charts.
 - `shared/engine.ts`: standalone calculation engine and validation.
 - `server/`: Express API, Binance client, and SQLite persistence.
-- `data/bitcoin-lab.sqlite`: automatically created database for real candle caching and reports. Cached candles and confirmed exchange gaps are stored per trading pair (Binance USDT spot pairs; BTCUSDT today). A database from a version before pair support is converted once on startup: all existing candles are filed under BTCUSDT in a single transaction, with nothing removed.
+- `data/bitcoin-lab.sqlite`: automatically created database for real candle caching and reports. Cached candles and confirmed exchange gaps are stored per trading pair. A database from a version before pair support is converted once on startup: all existing candles are filed under BTCUSDT in a single transaction, with nothing removed.
 - `DATABASE_PATH`: alternative SQLite file path. Its parent directory must already exist.
 - Templates and preferences are stored in the same SQLite file's `workspace` table. Legacy `localStorage` templates are merged into SQLite on first load; old keys are removed after a successful save.
 - `shared/upload.ts`: CSV reading, format detection and the quality report, shared by the browser preview and the server. `server/uploads.ts` stores datasets in the `uploads` and `upload_candles` tables.
+- `server/pairs.ts`: the daily-cached list of Binance USDT spot pairs and their listing dates (`pairs` and `pairs_meta` tables). `shared/pairs.ts` holds pair labels and price precision.
 - `server/paper.ts`, `server/paper-feed.ts`, `server/paper-store.ts`: paper trading sessions, the Binance kline stream, and the `paper_*` SQLite tables. `shared/paper.ts` holds the session model and validation.
 
 The application is a local workspace for one user, bound to `127.0.0.1`. It has no accounts, cloud synchronization, JavaScript code execution, or automatic parameter optimization. The Python runner is intended for trusted local code and is unsuitable for a public, multi-user deployment.
@@ -211,7 +224,7 @@ def on_candle(candles, state):
     return "hold"
 ```
 
-- `candles` is a read-only ordered view of candles closed so far; it supports indexing, slicing, iteration, and `len()`. Future candles are never passed to the function. Across Binance outages, the `time` difference between consecutive candles may exceed the selected interval. Each candle contains `time` (UTC Unix seconds), `open`, `high`, `low`, `close`, and `volume` (BTC).
+- `candles` is a read-only ordered view of candles closed so far; it supports indexing, slicing, iteration, and `len()`. Future candles are never passed to the function. Across Binance outages, the `time` difference between consecutive candles may exceed the selected interval. Each candle contains `time` (UTC Unix seconds), `open`, `high`, `low`, `close`, and `volume` (in the pair's base asset, such as BTC).
 - The function is called for every candle; handle indicator warmup in your code. A signal on the final candle cannot open a new trade because there is no next candle.
 - `state` is a dictionary that starts empty and persists between calls. Use it for your own calculations. It does not represent the actual portfolio or open position; counters that assume a position was opened may diverge from stop-loss/take-profit behavior.
 - `"buy"` signals a long entry, `"sell"` signals a long exit, and `"hold"` or `None` signals no action. Trades execute at the next candle's open. Buys while a position is open and sells while flat are ignored. Shorting and adding to an existing position are unsupported.
@@ -259,9 +272,9 @@ Browser end-to-end tests require Google Chrome:
 npm run test:e2e
 ```
 
-Tests cover backtests, report persistence, CSV downloads, template saving, comparisons, paper trading (start, comparison, stop, Python logs, session limit), uploading a Turkish Excel CSV and backtesting on it, and mobile overflow checks. Screenshots are written to `test-results/`. Playwright starts its own development server on ports 5273 (interface) and 3101 (API), using a new SQLite file in a temporary directory; your `data/` files and backups are unaffected.
+Tests cover backtests, report persistence, CSV downloads, template saving, comparisons, paper trading (start, comparison, stop, Python logs, session limit), uploading a Turkish Excel CSV and backtesting on it, other trading pairs (search, listing dates, eight-decimal prices, a paper session on SOL/USDT, refusing unknown pairs), and mobile overflow checks. Screenshots are written to `test-results/`. Playwright starts its own development server on ports 5273 (interface) and 3101 (API), using a new SQLite file in a temporary directory; your `data/` files and backups are unaffected.
 
-The browser tests do not need internet access. Playwright also starts `tests/support/fake-binance.ts`, a local stand-in for Binance's public REST and WebSocket market data on port 3109, and points the application at it through `BINANCE_REST_URL`, `BINANCE_STREAM_URL` and `VITE_BINANCE_STREAM_URL`. These variables default to Binance and are not needed otherwise. The stand-in derives prices from time alone and serves only closed candles, so the tests exercise the application's real Binance code paths: REST pagination, the kline stream, and closed-candle handling. Because candles close in real time, the paper trading test waits for three one-minute candles and takes about four minutes. Set `PLAYWRIGHT_BASE_URL` to test against a running server; records created by the tests will then remain in that server's database.
+The browser tests do not need internet access. Playwright also starts `tests/support/fake-binance.ts`, a local stand-in for Binance's public REST and WebSocket market data on port 3109, and points the application at it through `BINANCE_REST_URL`, `BINANCE_STREAM_URL` and `VITE_BINANCE_STREAM_URL`. These variables default to Binance and are not needed otherwise. The stand-in lists four pairs (BTC, ETH, SOL and SHIB against USDT) with Binance's price steps and listing days, derives prices from time alone and serves only closed candles, so the tests exercise the application's real Binance code paths: REST pagination, the kline stream, and closed-candle handling. Because candles close in real time, the paper trading test waits for three one-minute candles and takes about four minutes. Set `PLAYWRIGHT_BASE_URL` to test against a running server; records created by the tests will then remain in that server's database.
 
 To test the real Binance connection and backtests with real market data separately:
 
@@ -269,7 +282,7 @@ To test the real Binance connection and backtests with real market data separate
 LIVE_TESTS=1 npm run test:e2e -- live.spec.ts
 ```
 
-These integration tests require access to Binance and are skipped in the default run. They include a real one-minute paper trading session that checks the warmup loaded over REST, that closed candles arrive through the WebSocket (processed sooner than the 15-second REST fallback could), and that the comparison backtest is identical; it takes about 5 minutes. If your network blocks Binance, run the same tests from GitHub with **Actions → Live Binance tests → Run workflow** (`.github/workflows/live.yml`, manual only; Binance may refuse some regions). Without network access, `tests/paper-socket.test.ts` still drives the feed through Node's real WebSocket client against a local server sending Binance's exact message format. Unit tests also use a temporary in-memory database to verify pagination beyond 1,000 candles, caching, missing data, unclosed candles, and the 429 retry delay. `tests/paper.test.ts` feeds candles to paper trading one at a time and compares every intermediate state and the final report with a backtest of the same candles (built-in strategies, a custom candle strategy, Python, and a series with Binance outages). It also covers waiting on an unconfirmed gap, REST catch-up after a disconnect, server restarts, Python errors, template deletion, the three-session limit, the candle limit, and backups.
+These integration tests require access to Binance and are skipped in the default run. They include an ETH/USDT backtest and SHIB/USDT prices chosen through the pair picker, and a real one-minute paper trading session that checks the warmup loaded over REST, that closed candles arrive through the WebSocket (processed sooner than the 15-second REST fallback could), and that the comparison backtest is identical; it takes about 5 minutes. If your network blocks Binance, run the same tests from GitHub with **Actions → Live Binance tests → Run workflow** (`.github/workflows/live.yml`, manual only; Binance may refuse some regions). Without network access, `tests/paper-socket.test.ts` still drives the feed through Node's real WebSocket client against a local server sending Binance's exact message format. Unit tests also use a temporary in-memory database to verify pagination beyond 1,000 candles, caching, missing data, unclosed candles, and the 429 retry delay. `tests/paper.test.ts` feeds candles to paper trading one at a time and compares every intermediate state and the final report with a backtest of the same candles (built-in strategies, a custom candle strategy, Python, and a series with Binance outages). It also covers waiting on an unconfirmed gap, REST catch-up after a disconnect, server restarts, Python errors, template deletion, the three-session limit, the candle limit, and backups.
 
 ## License
 
